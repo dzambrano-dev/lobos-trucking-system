@@ -1,44 +1,82 @@
 import 'package:flutter/material.dart';
 
+// Import the other pages so we can navigate to them
+import 'clients.dart';
+import 'jobs.dart';
+import 'invoices.dart';
+
+// Main dashboard screen shown when the app starts
 class Dashboard extends StatelessWidget {
   const Dashboard({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Scaffold provides the main page structure (app bar, body, drawer, etc.)
     return Scaffold(
+      // Top navigation bar
       appBar: AppBar(title: const Text("Lobos Trucking System")),
 
-      body: Padding(
-        padding: const EdgeInsets.all(30),
-
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      // Sidebar navigation menu
+      drawer: Drawer(
+        child: ListView(
           children: [
-            const Text(
-              "Dashboard",
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+            // Drawer header at the top of the sidebar
+            const DrawerHeader(
+              decoration: BoxDecoration(color: Colors.blue),
+              child: Text(
+                "Lobos Trucking",
+                style: TextStyle(color: Colors.white, fontSize: 20),
+              ),
             ),
 
-            const SizedBox(height: 30),
-
-            ElevatedButton(onPressed: () {}, child: const Text("Add Client")),
-
-            const SizedBox(height: 10),
-
-            ElevatedButton(onPressed: () {}, child: const Text("Add Job")),
-
-            const SizedBox(height: 10),
-
-            ElevatedButton(
-              onPressed: () {},
-              child: const Text("Create Invoice"),
+            // Navigation item for the dashboard (current page)
+            ListTile(
+              title: const Text("Dashboard"),
+              onTap: () {
+                Navigator.pop(context); // closes the drawer
+              },
             ),
 
-            const SizedBox(height: 40),
+            // Navigation item that opens the Clients page
+            ListTile(
+              title: const Text("Clients"),
+              onTap: () {
+                // Push a new page onto the navigation stack
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ClientsPage()),
+                );
+              },
+            ),
 
-            const Text("Recent Jobs", style: TextStyle(fontSize: 20)),
+            // Navigation item that opens the Jobs page
+            ListTile(
+              title: const Text("Jobs"),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const JobsPage()),
+                );
+              },
+            ),
+
+            // Navigation item that opens the Invoices page
+            ListTile(
+              title: const Text("Invoices"),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const InvoicesPage()),
+                );
+              },
+            ),
           ],
         ),
+      ),
+
+      // Main content area of the dashboard
+      body: const Center(
+        child: Text("Dashboard", style: TextStyle(fontSize: 30)),
       ),
     );
   }
