@@ -1,26 +1,20 @@
 import 'package:flutter/material.dart';
 
-// Import the other pages so we can navigate to them
 import 'clients.dart';
 import 'jobs.dart';
 import 'invoices.dart';
 
-// Main dashboard screen shown when the app starts
 class Dashboard extends StatelessWidget {
   const Dashboard({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Scaffold provides the main page structure (app bar, body, drawer, etc.)
     return Scaffold(
-      // Top navigation bar
       appBar: AppBar(title: const Text("Lobos Trucking System")),
 
-      // Sidebar navigation menu
       drawer: Drawer(
         child: ListView(
           children: [
-            // Drawer header at the top of the sidebar
             const DrawerHeader(
               decoration: BoxDecoration(color: Colors.blue),
               child: Text(
@@ -29,19 +23,20 @@ class Dashboard extends StatelessWidget {
               ),
             ),
 
-            // Navigation item for the dashboard (current page)
             ListTile(
+              leading: const Icon(Icons.dashboard),
               title: const Text("Dashboard"),
               onTap: () {
-                Navigator.pop(context); // closes the drawer
+                Navigator.pop(context);
               },
             ),
 
-            // Navigation item that opens the Clients page
             ListTile(
+              leading: const Icon(Icons.people),
               title: const Text("Clients"),
               onTap: () {
-                // Push a new page onto the navigation stack
+                Navigator.pop(context);
+
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const ClientsPage()),
@@ -49,10 +44,12 @@ class Dashboard extends StatelessWidget {
               },
             ),
 
-            // Navigation item that opens the Jobs page
             ListTile(
+              leading: const Icon(Icons.local_shipping),
               title: const Text("Jobs"),
               onTap: () {
+                Navigator.pop(context);
+
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const JobsPage()),
@@ -60,10 +57,12 @@ class Dashboard extends StatelessWidget {
               },
             ),
 
-            // Navigation item that opens the Invoices page
             ListTile(
+              leading: const Icon(Icons.receipt_long),
               title: const Text("Invoices"),
               onTap: () {
+                Navigator.pop(context);
+
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const InvoicesPage()),
@@ -74,7 +73,6 @@ class Dashboard extends StatelessWidget {
         ),
       ),
 
-      // Main content area of the dashboard
       body: const Center(
         child: Text("Dashboard", style: TextStyle(fontSize: 30)),
       ),
