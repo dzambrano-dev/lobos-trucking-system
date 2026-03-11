@@ -16,6 +16,39 @@ class ClientsPage extends StatefulWidget {
 
 // State class allows us to store form data and update UI
 class _ClientsPageState extends State<ClientsPage> {
+  Future<void> loadClients() async {
+    try {
+      final response = await http.get(
+        Uri.parse("http://localhost:8000/clients"),
+      );
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+
+        setState(() {
+          clients = data
+              .map<Map<String, String>>(
+                (c) => {
+                  "company": c["company"],
+                  "contact": c["contact"],
+                  "phone": c["phone"],
+                  "email": c["email"],
+                },
+              )
+              .toList();
+        });
+      }
+    } catch (e) {
+      print("Error loading clients: $e");
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    loadClients();
+  }
+
   // Controllers store text input from the form fields
   final TextEditingController companyController = TextEditingController();
   final TextEditingController contactController = TextEditingController();
@@ -28,6 +61,9 @@ class _ClientsPageState extends State<ClientsPage> {
 
   // Loading state used to disable button during API call
   bool isSaving = false;
+
+  //Local list of clients dispayed in the table
+  List<Map<String, String>> clients = [];
 
   /// Sends client data to FastAPI backend
   Future<void> saveClient() async {
@@ -58,6 +94,16 @@ class _ClientsPageState extends State<ClientsPage> {
 
       // Handle response
       if (response.statusCode == 200 || response.statusCode == 201) {
+        setState(() {
+          //add clients
+          clients.add({
+            "company": companyController.text,
+            "contact": contactController.text,
+            "phone": phoneController.text,
+            "email": emailController.text,
+          });
+        });
+
         // Clear form fields after successful save
         companyController.clear();
         contactController.clear();
@@ -216,6 +262,38 @@ class _ClientsPageState extends State<ClientsPage> {
                           ),
                         )
                       : const Text("Save Client"),
+                ),
+              ),
+              const SizedBox(height: 40),
+
+              const Text(
+                "Clients",
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              ),
+
+              const SizedBox(height: 10),
+
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  columns: const [
+                    DataColumn(label: Text("Company")),
+                    DataColumn(label: Text("Contact")),
+                    DataColumn(label: Text("Phone")),
+                    DataColumn(label: Text("Email")),
+                  ],
+                  rows: clients
+                      .map(
+                        (client) => DataRow(
+                          cells: [
+                            DataCell(Text(client["company"]!)),
+                            DataCell(Text(client["contact"]!)),
+                            DataCell(Text(client["phone"]!)),
+                            DataCell(Text(client["email"]!)),
+                          ],
+                        ),
+                      )
+                      .toList(),
                 ),
               ),
             ],

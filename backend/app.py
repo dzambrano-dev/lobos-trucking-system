@@ -3,23 +3,29 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
 
+
 # Create FastAPI application
 app = FastAPI()
 
-# Allow frontend apps to access the API
+
+# Allow frontend apps (Flutter) to access the API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],   # allow all during development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
 # Path to SQLite database
 DB_PATH = "../database/lobos.db"
 
 
-# Client data model
+# ---------------------------
+# Data models
+# ---------------------------
+
 class Client(BaseModel):
     company_name: str
     contact_name: str
@@ -28,12 +34,27 @@ class Client(BaseModel):
     address: str
 
 
-# Helper function for database connection
+# ---------------------------
+# Database helper
+# ---------------------------
+
 def get_db():
     return sqlite3.connect(DB_PATH)
 
 
-# Endpoint to add a client
+# ---------------------------
+# Health check
+# ---------------------------
+
+@app.get("/")
+def root():
+    return {"status": "Lobos Trucking API running"}
+
+
+# ---------------------------
+# CREATE CLIENT
+# ---------------------------
+
 @app.post("/clients")
 def add_client(client: Client):
 
@@ -56,7 +77,6 @@ def add_client(client: Client):
 
     conn.commit()
 
-    # Get ID of inserted record
     client_id = cursor.lastrowid
 
     conn.close()
@@ -65,3 +85,59 @@ def add_client(client: Client):
         "message": "Client added successfully",
         "client_id": client_id,
     }
+
+
+# ---------------------------
+# GET ALL CLIENTS
+# ---------------------------
+
+@app.get("/clients")
+def get_clients():
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT client_id, company_name, contact_name, phone, email
+        FROM clients
+        """
+    )
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    clients = [
+        {
+            "id": row[0],
+            "company": row[1],
+            "contact": row[2],
+            "phone": row[3],
+            "email": row[4],
+        }
+        for row in rows
+    ]
+
+    return clients
+
+
+# ---------------------------
+# DELETE CLIENT
+# ---------------------------
+
+@app.delete("/clients/{client_id}")
+def delete_client(client_id: int):
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "DELETE FROM clients WHERE client_id = ?",
+        (client_id,),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {"message": "Client deleted"}
