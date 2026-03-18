@@ -1,46 +1,69 @@
 import 'package:flutter/material.dart';
+import '../models/invoice.dart';
+import 'invoice_detail.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
-// InvoicesPage represents the billing and payment tracking screen
-class InvoicesPage extends StatelessWidget {
+class InvoicesPage extends StatefulWidget {
   const InvoicesPage({super.key});
+
+  @override
+  State<InvoicesPage> createState() => _InvoicesPageState();
+}
+
+class _InvoicesPageState extends State<InvoicesPage> {
+  final List<Invoice> invoices = [];
+
+  Future<void> loadInvoices() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString('invoices');
+
+    if (jsonString != null) {
+      final List decoded = jsonDecode(jsonString);
+
+      setState(() {
+        invoices.clear();
+        invoices.addAll(decoded.map((e) => Invoice.fromMap(e)).toList());
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    loadInvoices();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Invoices")),
 
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(30),
+      body: invoices.isEmpty
+          ? const Center(child: Text("No invoices yet"))
+          : ListView.builder(
+              itemCount: invoices.length,
+              itemBuilder: (context, index) {
+                final invoice = invoices[index];
 
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Invoice Management",
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                return Card(
+                  child: ListTile(
+                    title: Text(invoice.client),
+                    subtitle: Text("\$${invoice.amount}"),
+
+                    // 👉 NAVIGATE TO DETAIL
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => InvoiceDetailPage(invoice: invoice),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
             ),
-
-            const SizedBox(height: 20),
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  // TODO: implement invoice creation page
-                },
-                child: const Text("Create Invoice"),
-              ),
-            ),
-
-            const SizedBox(height: 30),
-
-            const Text(
-              "Invoice List (coming soon)",
-              style: TextStyle(fontSize: 18),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
