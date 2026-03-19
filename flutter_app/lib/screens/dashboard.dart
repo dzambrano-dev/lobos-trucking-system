@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'clients.dart';
 import 'jobs.dart';
@@ -7,10 +8,63 @@ import 'invoices.dart';
 class Dashboard extends StatelessWidget {
   const Dashboard({super.key});
 
+  // ================= NAVIGATION =================
+  void goTo(BuildContext context, Widget page) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+  }
+
+  // ================= COUNT STREAM =================
+  Stream<int> getCount(String collection) {
+    return FirebaseFirestore.instance
+        .collection(collection)
+        .snapshots()
+        .map((snap) => snap.docs.length);
+  }
+
+  // ================= REVENUE =================
+  Stream<double> getRevenue() {
+    return FirebaseFirestore.instance.collection('invoices').snapshots().map((
+      snap,
+    ) {
+      double total = 0;
+      for (var doc in snap.docs) {
+        final data = doc.data();
+        total += (data['amount'] as num?)?.toDouble() ?? 0;
+      }
+      return total;
+    });
+  }
+
+  // ================= STREAM CARD =================
+  Widget buildStatCard({
+    required String title,
+    required IconData icon,
+    required Color color,
+    required Stream<dynamic> stream,
+    required String Function(dynamic) formatter,
+    VoidCallback? onTap,
+  }) {
+    return StreamBuilder(
+      stream: stream,
+      builder: (context, snapshot) {
+        final value = snapshot.hasData ? formatter(snapshot.data) : "...";
+
+        return DashboardCard(
+          title: title,
+          value: value,
+          icon: icon,
+          color: color,
+          onTap: onTap,
+        );
+      },
+    );
+  }
+
+  // ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Lobos Trucking System")),
+      appBar: AppBar(title: const Text("Lobos Trucking")),
 
       drawer: Drawer(
         child: ListView(
@@ -34,10 +88,7 @@ class Dashboard extends StatelessWidget {
               title: const Text("Clients"),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const ClientsPage()),
-                );
+                goTo(context, const ClientsPage());
               },
             ),
 
@@ -46,10 +97,7 @@ class Dashboard extends StatelessWidget {
               title: const Text("Jobs"),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const JobsPage()),
-                );
+                goTo(context, const JobsPage());
               },
             ),
 
@@ -58,10 +106,7 @@ class Dashboard extends StatelessWidget {
               title: const Text("Invoices"),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const InvoicesPage()),
-                );
+                goTo(context, const InvoicesPage());
               },
             ),
           ],
@@ -74,7 +119,7 @@ class Dashboard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            /// Dashboard cards grid
+            // ================= STATS =================
             GridView.count(
               crossAxisCount: 2,
               shrinkWrap: true,
@@ -83,92 +128,69 @@ class Dashboard extends StatelessWidget {
               mainAxisSpacing: 20,
 
               children: [
-                DashboardCard(
+                buildStatCard(
                   title: "Clients",
-                  value: "12",
                   icon: Icons.people,
                   color: Colors.blue,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ClientsPage()),
-                    );
-                  },
+                  stream: getCount('clients'),
+                  formatter: (v) => v.toString(),
+                  onTap: () => goTo(context, const ClientsPage()),
                 ),
 
-                DashboardCard(
+                buildStatCard(
                   title: "Jobs",
-                  value: "34",
                   icon: Icons.local_shipping,
                   color: Colors.green,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const JobsPage()),
-                    );
-                  },
+                  stream: getCount('jobs'),
+                  formatter: (v) => v.toString(),
+                  onTap: () => goTo(context, const JobsPage()),
                 ),
 
-                DashboardCard(
+                buildStatCard(
                   title: "Invoices",
-                  value: "18",
                   icon: Icons.receipt_long,
                   color: Colors.orange,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const InvoicesPage()),
-                    );
-                  },
+                  stream: getCount('invoices'),
+                  formatter: (v) => v.toString(),
+                  onTap: () => goTo(context, const InvoicesPage()),
                 ),
 
-                const DashboardCard(
+                buildStatCard(
                   title: "Revenue",
-                  value: "\$42k",
                   icon: Icons.attach_money,
                   color: Colors.purple,
+                  stream: getRevenue(),
+                  formatter: (v) => "\$${v.toStringAsFixed(0)}",
                 ),
               ],
             ),
 
             const SizedBox(height: 30),
 
-            /// Recent Activity Section
+            // ================= RECENT ACTIVITY =================
             const Text(
-              "Recent Activity",
+              "System Status",
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
 
             const SizedBox(height: 10),
 
             Card(
-              elevation: 3,
               child: Column(
                 children: const [
                   ActivityItem(
-                    icon: Icons.person_add,
-                    text: "New client added: Acme Logistics",
+                    icon: Icons.cloud_done,
+                    text: "Connected to Firebase",
                   ),
-
                   Divider(height: 1),
-
                   ActivityItem(
-                    icon: Icons.receipt,
-                    text: "Invoice created: #1045",
+                    icon: Icons.sync,
+                    text: "Live data updates enabled",
                   ),
-
                   Divider(height: 1),
-
                   ActivityItem(
-                    icon: Icons.local_shipping,
-                    text: "Job scheduled: LA → Phoenix",
-                  ),
-
-                  Divider(height: 1),
-
-                  ActivityItem(
-                    icon: Icons.attach_money,
-                    text: "Payment received: \$1200",
+                    icon: Icons.check_circle,
+                    text: "System operational",
                   ),
                 ],
               ),
@@ -180,6 +202,7 @@ class Dashboard extends StatelessWidget {
   }
 }
 
+// ================= CARD =================
 class DashboardCard extends StatelessWidget {
   final String title;
   final String value;
@@ -203,9 +226,6 @@ class DashboardCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
 
       child: Card(
-        elevation: 5,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-
         child: Padding(
           padding: const EdgeInsets.all(20),
 
@@ -223,12 +243,12 @@ class DashboardCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(fontSize: 16)),
+                  Text(title),
                   const SizedBox(height: 5),
                   Text(
                     value,
                     style: const TextStyle(
-                      fontSize: 24,
+                      fontSize: 22,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -242,6 +262,7 @@ class DashboardCard extends StatelessWidget {
   }
 }
 
+// ================= ACTIVITY =================
 class ActivityItem extends StatelessWidget {
   final IconData icon;
   final String text;

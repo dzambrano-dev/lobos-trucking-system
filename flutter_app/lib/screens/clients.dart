@@ -1,12 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-// Import HTTP library so Flutter can call the backend API
-import 'package:http/http.dart' as http;
-
-// Import JSON tools so we can encode the request body
-import 'dart:convert';
-
-// ClientsPage is the main screen used to manage trucking clients
 class ClientsPage extends StatefulWidget {
   const ClientsPage({super.key});
 
@@ -14,296 +8,209 @@ class ClientsPage extends StatefulWidget {
   State<ClientsPage> createState() => _ClientsPageState();
 }
 
-// State class allows us to store form data and update UI
 class _ClientsPageState extends State<ClientsPage> {
-  Future<void> loadClients() async {
-    try {
-      final response = await http.get(
-        Uri.parse("http://localhost:8000/clients"),
-      );
-
-      if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
-
-        setState(() {
-          clients = data
-              .map<Map<String, String>>(
-                (c) => {
-                  "company": c["company"],
-                  "contact": c["contact"],
-                  "phone": c["phone"],
-                  "email": c["email"],
-                },
-              )
-              .toList();
-        });
-      }
-    } catch (e) {
-      print("Error loading clients: $e");
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    loadClients();
-  }
-
-  // Controllers store text input from the form fields
+  // ================= CONTROLLERS =================
   final TextEditingController companyController = TextEditingController();
   final TextEditingController contactController = TextEditingController();
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController emailController = TextEditingController();
   final TextEditingController addressController = TextEditingController();
 
-  // Global key used to validate the form
   final _formKey = GlobalKey<FormState>();
 
-  // Loading state used to disable button during API call
   bool isSaving = false;
 
-  //Local list of clients dispayed in the table
-  List<Map<String, String>> clients = [];
-
-  /// Sends client data to FastAPI backend
+  // ================= SAVE CLIENT =================
   Future<void> saveClient() async {
-    // Validate the form before sending
     if (!_formKey.currentState!.validate()) return;
 
-    // Enable loading state
     setState(() {
       isSaving = true;
     });
 
-    // Create JSON object from form fields
-    final clientData = {
-      "company_name": companyController.text,
-      "contact_name": contactController.text,
-      "phone": phoneController.text,
-      "email": emailController.text,
-      "address": addressController.text,
-    };
-
     try {
-      // Send POST request to backend
-      final response = await http.post(
-        Uri.parse("http://localhost:8000/clients"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(clientData),
-      );
+      await FirebaseFirestore.instance.collection('clients').add({
+        "name": companyController.text,
+        "contact": contactController.text,
+        "phone": phoneController.text,
+        "email": emailController.text,
+        "address": addressController.text,
+        "createdAt": Timestamp.now(),
+      });
 
-      // Handle response
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        setState(() {
-          //add clients
-          clients.add({
-            "company": companyController.text,
-            "contact": contactController.text,
-            "phone": phoneController.text,
-            "email": emailController.text,
-          });
-        });
+      // Clear inputs
+      companyController.clear();
+      contactController.clear();
+      phoneController.clear();
+      emailController.clear();
+      addressController.clear();
 
-        // Clear form fields after successful save
-        companyController.clear();
-        contactController.clear();
-        phoneController.clear();
-        emailController.clear();
-        addressController.clear();
-
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Client saved successfully")),
-        );
-      } else {
-        // Backend returned an error
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error saving client: ${response.body}")),
-        );
-      }
-    } catch (e) {
-      // Network error or server unreachable
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text("Connection error: $e")));
+      ).showSnackBar(const SnackBar(content: Text("Client saved")));
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error: $e")));
     }
 
-    // Disable loading state
     setState(() {
       isSaving = false;
     });
   }
 
+  // ================= DELETE CLIENT =================
+  Future<void> deleteClient(String id) async {
+    await FirebaseFirestore.instance.collection('clients').doc(id).delete();
+  }
+
+  // ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Top navigation bar
       appBar: AppBar(title: const Text("Clients")),
 
-      // Scrollable layout prevents keyboard overflow
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(30),
 
-        // Form groups the input fields
-        child: Form(
-          key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ================= FORM =================
+            const Text(
+              "Add Client",
+              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+            ),
 
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              /// Page Title
-              const Text(
-                "Add Client",
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+            const SizedBox(height: 20),
+
+            Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: companyController,
+                    decoration: const InputDecoration(
+                      labelText: "Company Name",
+                    ),
+                    validator: (v) => v!.isEmpty ? "Required" : null,
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  TextFormField(
+                    controller: contactController,
+                    decoration: const InputDecoration(
+                      labelText: "Contact Name",
+                    ),
+                    validator: (v) => v!.isEmpty ? "Required" : null,
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  TextFormField(
+                    controller: phoneController,
+                    decoration: const InputDecoration(labelText: "Phone"),
+                    validator: (v) => v!.isEmpty ? "Required" : null,
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  TextFormField(
+                    controller: emailController,
+                    decoration: const InputDecoration(labelText: "Email"),
+                    validator: (v) => v!.isEmpty ? "Required" : null,
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  TextFormField(
+                    controller: addressController,
+                    decoration: const InputDecoration(labelText: "Address"),
+                    validator: (v) => v!.isEmpty ? "Required" : null,
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: isSaving ? null : saveClient,
+                      child: isSaving
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Text("Save Client"),
+                    ),
+                  ),
+                ],
               ),
+            ),
 
-              const SizedBox(height: 20),
+            const SizedBox(height: 40),
 
-              /// Company Name
-              TextFormField(
-                controller: companyController,
-                decoration: const InputDecoration(
-                  labelText: "Company Name",
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return "Company name required";
-                  }
-                  return null;
-                },
-              ),
+            // ================= CLIENT LIST =================
+            const Text(
+              "Clients",
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
 
-              const SizedBox(height: 15),
+            const SizedBox(height: 10),
 
-              /// Contact Name
-              TextFormField(
-                controller: contactController,
-                decoration: const InputDecoration(
-                  labelText: "Contact Name",
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return "Contact name required";
-                  }
-                  return null;
-                },
-              ),
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('clients')
+                  .orderBy('createdAt', descending: true)
+                  .snapshots(),
 
-              const SizedBox(height: 15),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-              /// Phone
-              TextFormField(
-                controller: phoneController,
-                decoration: const InputDecoration(
-                  labelText: "Phone",
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return "Phone required";
-                  }
-                  return null;
-                },
-              ),
+                final clients = snapshot.data!.docs;
 
-              const SizedBox(height: 15),
+                if (clients.isEmpty) {
+                  return const Text("No clients yet");
+                }
 
-              /// Email
-              TextFormField(
-                controller: emailController,
-                decoration: const InputDecoration(
-                  labelText: "Email",
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return "Email required";
-                  }
-                  return null;
-                },
-              ),
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    columns: const [
+                      DataColumn(label: Text("Company")),
+                      DataColumn(label: Text("Contact")),
+                      DataColumn(label: Text("Phone")),
+                      DataColumn(label: Text("Email")),
+                      DataColumn(label: Text("Actions")),
+                    ],
+                    rows: clients.map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
 
-              const SizedBox(height: 15),
+                      return DataRow(
+                        cells: [
+                          DataCell(Text(data["name"] ?? "")),
+                          DataCell(Text(data["contact"] ?? "")),
+                          DataCell(Text(data["phone"] ?? "")),
+                          DataCell(Text(data["email"] ?? "")),
 
-              /// Address
-              TextFormField(
-                controller: addressController,
-                decoration: const InputDecoration(
-                  labelText: "Address",
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return "Address required";
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 25),
-
-              /// Save Button
-              SizedBox(
-                width: double.infinity,
-
-                child: ElevatedButton(
-                  // Disable button while saving
-                  onPressed: isSaving ? null : saveClient,
-
-                  child: isSaving
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
-                            color: Colors.white,
+                          DataCell(
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () => deleteClient(doc.id),
+                            ),
                           ),
-                        )
-                      : const Text("Save Client"),
-                ),
-              ),
-              const SizedBox(height: 40),
-
-              const Text(
-                "Clients",
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 10),
-
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  columns: const [
-                    DataColumn(label: Text("Company")),
-                    DataColumn(label: Text("Contact")),
-                    DataColumn(label: Text("Phone")),
-                    DataColumn(label: Text("Email")),
-                  ],
-                  rows: clients
-                      .map(
-                        (client) => DataRow(
-                          cells: [
-                            DataCell(Text(client["company"]!)),
-                            DataCell(Text(client["contact"]!)),
-                            DataCell(Text(client["phone"]!)),
-                            DataCell(Text(client["email"]!)),
-                          ],
-                        ),
-                      )
-                      .toList(),
-                ),
-              ),
-            ],
-          ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                );
+              },
+            ),
+          ],
         ),
       ),
     );
   }
 
-  /// Dispose controllers when widget is destroyed
   @override
   void dispose() {
     companyController.dispose();

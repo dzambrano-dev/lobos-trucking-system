@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/invoice.dart';
 import 'invoice_detail.dart';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class InvoicesPage extends StatefulWidget {
   const InvoicesPage({super.key});
@@ -12,58 +11,73 @@ class InvoicesPage extends StatefulWidget {
 }
 
 class _InvoicesPageState extends State<InvoicesPage> {
-  final List<Invoice> invoices = [];
-
-  Future<void> loadInvoices() async {
-    final prefs = await SharedPreferences.getInstance();
-    final jsonString = prefs.getString('invoices');
-
-    if (jsonString != null) {
-      final List decoded = jsonDecode(jsonString);
-
-      setState(() {
-        invoices.clear();
-        invoices.addAll(decoded.map((e) => Invoice.fromMap(e)).toList());
-      });
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    loadInvoices();
-  }
-
+  // ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Invoices")),
 
-      body: invoices.isEmpty
-          ? const Center(child: Text("No invoices yet"))
-          : ListView.builder(
-              itemCount: invoices.length,
-              itemBuilder: (context, index) {
-                final invoice = invoices[index];
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('invoices')
+            .orderBy('createdAt', descending: true)
+            .snapshots(),
 
-                return Card(
-                  child: ListTile(
-                    title: Text(invoice.client),
-                    subtitle: Text("\$${invoice.amount}"),
+        builder: (context, snapshot) {
+          // ================= LOADING =================
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-                    // 👉 NAVIGATE TO DETAIL
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => InvoiceDetailPage(invoice: invoice),
-                        ),
-                      );
-                    },
+          // ================= EMPTY =================
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return const Center(child: Text("No invoices yet"));
+          }
+
+          // ================= PARSE =================
+          final invoices = snapshot.data!.docs.map((doc) {
+            return Invoice.fromFirestore(
+              doc.id,
+              doc.data() as Map<String, dynamic>,
+            );
+          }).toList();
+
+          // ================= LIST =================
+          return ListView.builder(
+            itemCount: invoices.length,
+            itemBuilder: (context, index) {
+              final invoice = invoices[index];
+
+              return Card(
+                child: ListTile(
+                  title: Text(invoice.client),
+
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("\$${invoice.amount}"),
+                      Text(
+                        invoice.createdAt.toLocal().toString().split('.')[0],
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
                   ),
-                );
-              },
-            ),
+
+                  // 👉 NAVIGATE TO DETAIL
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => InvoiceDetailPage(invoice: invoice),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

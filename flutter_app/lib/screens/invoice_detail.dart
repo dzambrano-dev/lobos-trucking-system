@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/invoice.dart';
 import '../models/job.dart';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
@@ -16,70 +15,27 @@ class InvoiceDetailPage extends StatefulWidget {
 }
 
 class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
-  Future<void> generatePDF() async {
-    final pdf = pw.Document();
-
-    pdf.addPage(
-      pw.Page(
-        build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                "INVOICE",
-                style: pw.TextStyle(
-                  fontSize: 24,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-
-              pw.SizedBox(height: 20),
-
-              pw.Text("Client: ${widget.invoice.client}"),
-              pw.Text("Route: ${job!.pickup} → ${job!.dropoff}"),
-              pw.Text("Amount: \$${widget.invoice.amount}"),
-              pw.Text("Status: ${job!.status}"),
-
-              if (job!.notes != null) pw.Text("Notes: ${job!.notes}"),
-
-              pw.SizedBox(height: 10),
-
-              pw.Text(
-                "Date: ${widget.invoice.createdAt.toLocal().toString().split('.')[0]}",
-              ),
-
-              pw.SizedBox(height: 20),
-
-              pw.Divider(),
-
-              pw.Text("Thank you for your business."),
-            ],
-          );
-        },
-      ),
-    );
-
-    await Printing.layoutPdf(onLayout: (format) async => pdf.save());
-  }
-
   Job? job;
+  bool isLoading = true;
 
-  // ================= LOAD JOB =================
+  // ================= LOAD JOB FROM FIRESTORE =================
   Future<void> loadJob() async {
-    final prefs = await SharedPreferences.getInstance();
-    final jsonString = prefs.getString('jobs');
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('jobs')
+          .doc(widget.invoice.jobId)
+          .get();
 
-    if (jsonString != null) {
-      final List decoded = jsonDecode(jsonString);
-      final jobs = decoded.map((e) => Job.fromMap(e)).toList();
-
-      final found = jobs.where((j) => j.id == widget.invoice.jobId);
-
-      if (found.isNotEmpty) {
+      if (doc.exists) {
         setState(() {
-          job = found.first;
+          job = Job.fromFirestore(doc.id, doc.data() as Map<String, dynamic>);
+          isLoading = false;
         });
+      } else {
+        setState(() => isLoading = false);
       }
+    } catch (e) {
+      setState(() => isLoading = false);
     }
   }
 
@@ -101,6 +57,56 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
     }
   }
 
+  // ================= PDF =================
+  Future<void> generatePDF() async {
+    if (job == null) return;
+
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.Page(
+        build: (context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                "INVOICE",
+                style: pw.TextStyle(
+                  fontSize: 24,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+
+              pw.SizedBox(height: 20),
+
+              pw.Text("Client: ${widget.invoice.client}"),
+              pw.Text("Route: ${job!.pickup} → ${job!.dropoff}"),
+              pw.Text("Amount: \$${widget.invoice.amount}"),
+              pw.Text("Status: ${job!.status}"),
+
+              if (job!.notes != null && job!.notes!.isNotEmpty)
+                pw.Text("Notes: ${job!.notes}"),
+
+              pw.SizedBox(height: 10),
+
+              pw.Text(
+                "Date: ${widget.invoice.createdAt.toLocal().toString().split('.')[0]}",
+              ),
+
+              pw.SizedBox(height: 20),
+
+              pw.Divider(),
+
+              pw.Text("Thank you for your business."),
+            ],
+          );
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(onLayout: (format) async => pdf.save());
+  }
+
   // ================= UI =================
   @override
   Widget build(BuildContext context) {
@@ -110,8 +116,10 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
       body: Padding(
         padding: const EdgeInsets.all(20),
 
-        child: job == null
+        child: isLoading
             ? const Center(child: CircularProgressIndicator())
+            : job == null
+            ? const Center(child: Text("Job not found"))
             : Card(
                 elevation: 3,
                 child: Padding(
@@ -137,9 +145,9 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
 
                       const SizedBox(height: 10),
 
-                      Text(
+                      const Text(
                         "Route:",
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                        style: TextStyle(fontWeight: FontWeight.bold),
                       ),
 
                       Text("${job!.pickup} → ${job!.dropoff}"),
@@ -175,7 +183,8 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
 
                       const SizedBox(height: 10),
 
-                      if (job!.notes != null) Text("Notes: ${job!.notes}"),
+                      if (job!.notes != null && job!.notes!.isNotEmpty)
+                        Text("Notes: ${job!.notes}"),
 
                       const SizedBox(height: 20),
 
@@ -193,6 +202,7 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                         "Thank you for your business.",
                         style: TextStyle(fontStyle: FontStyle.italic),
                       ),
+
                       const SizedBox(height: 20),
 
                       SizedBox(

@@ -1,36 +1,49 @@
 class Invoice {
-  final String id;
-  final String jobId;
-  final String client;
+  final String id; // Firestore doc ID
+  final String jobId; // relation to Job
+  final String client; // cached for UI (can remove later)
   final double amount;
   final DateTime createdAt;
 
   Invoice({
-    String? id,
+    required this.id,
     required this.jobId,
     required this.client,
     required this.amount,
-    DateTime? createdAt,
-  }) : id = id ?? DateTime.now().millisecondsSinceEpoch.toString(),
-       createdAt = createdAt ?? DateTime.now();
+    required this.createdAt,
+  });
 
+  // ================= TO FIRESTORE =================
   Map<String, dynamic> toMap() {
     return {
-      "id": id,
       "jobId": jobId,
       "client": client,
       "amount": amount,
-      "createdAt": createdAt.toIso8601String(),
+      "createdAt": createdAt, // Firestore handles DateTime
     };
   }
 
-  factory Invoice.fromMap(Map<String, dynamic> map) {
+  // ================= FROM FIRESTORE =================
+  factory Invoice.fromFirestore(String id, Map<String, dynamic> map) {
     return Invoice(
-      id: map["id"],
-      jobId: map["jobId"],
-      client: map["client"],
-      amount: (map["amount"] as num).toDouble(),
-      createdAt: DateTime.parse(map["createdAt"]),
+      id: id,
+      jobId: map["jobId"] ?? "",
+      client: map["client"] ?? "",
+      amount: (map["amount"] as num?)?.toDouble() ?? 0.0,
+      createdAt: map["createdAt"] != null
+          ? (map["createdAt"] as dynamic).toDate()
+          : DateTime.now(),
+    );
+  }
+
+  // ================= COPY =================
+  Invoice copyWith({String? jobId, String? client, double? amount}) {
+    return Invoice(
+      id: id,
+      jobId: jobId ?? this.jobId,
+      client: client ?? this.client,
+      amount: amount ?? this.amount,
+      createdAt: createdAt,
     );
   }
 }

@@ -1,58 +1,61 @@
 class Job {
-  final String id; // unique identifier (important for scaling)
-  final String client;
+  final String id; // Firestore document ID
+  final String clientId; //REAL relationship
+  final String clientName; // cached for UI
   final String pickup;
   final String dropoff;
   final double price;
   final String status;
+  final String? notes;
   final DateTime createdAt;
-  final String? notes; // optional extra info
 
   Job({
-    String? id,
-    required this.client,
+    required this.id,
+    required this.clientId,
+    required this.clientName,
     required this.pickup,
     required this.dropoff,
     required this.price,
-    this.status = "pending",
+    required this.status,
+    required this.createdAt,
     this.notes,
-    DateTime? createdAt,
-  }) : id = id ?? DateTime.now().millisecondsSinceEpoch.toString(),
-       createdAt = createdAt ?? DateTime.now();
+  });
 
-  // Convert Job → Map (for saving)
+  // ================= TO MAP (Firestore) =================
   Map<String, dynamic> toMap() {
     return {
-      "id": id,
-      "client": client,
+      "clientId": clientId,
+      "clientName": clientName,
       "pickup": pickup,
       "dropoff": dropoff,
       "price": price,
       "status": status,
       "notes": notes,
-      "createdAt": createdAt.toIso8601String(),
+      "createdAt": createdAt, // Firestore handles DateTime
     };
   }
 
-  // Convert Map → Job (safe parsing)
-  factory Job.fromMap(Map<String, dynamic> map) {
+  // ================= FROM FIRESTORE =================
+  factory Job.fromFirestore(String id, Map<String, dynamic> map) {
     return Job(
-      id: map["id"]?.toString(),
-      client: map["client"] ?? "",
+      id: id,
+      clientId: map["clientId"] ?? "",
+      clientName: map["clientName"] ?? "",
       pickup: map["pickup"] ?? "",
       dropoff: map["dropoff"] ?? "",
       price: (map["price"] as num?)?.toDouble() ?? 0.0,
       status: map["status"] ?? "pending",
       notes: map["notes"],
       createdAt: map["createdAt"] != null
-          ? DateTime.tryParse(map["createdAt"]) ?? DateTime.now()
+          ? (map["createdAt"] as dynamic).toDate()
           : DateTime.now(),
     );
   }
 
-  // Copy method (used for editing later)
+  // ================= COPY =================
   Job copyWith({
-    String? client,
+    String? clientId,
+    String? clientName,
     String? pickup,
     String? dropoff,
     double? price,
@@ -61,7 +64,8 @@ class Job {
   }) {
     return Job(
       id: id,
-      client: client ?? this.client,
+      clientId: clientId ?? this.clientId,
+      clientName: clientName ?? this.clientName,
       pickup: pickup ?? this.pickup,
       dropoff: dropoff ?? this.dropoff,
       price: price ?? this.price,
