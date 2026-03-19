@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "780175935349",
+    "project_id": "lobos-trucking",
+    "storage_bucket": "lobos-trucking.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:780175935349:android:8001a81322db80e981753c",
+        "android_client_info": {
+          "package_name": "com.example.flutter_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDIROdOfyqQqo2cshMBlqor01Dqdzeo5_4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

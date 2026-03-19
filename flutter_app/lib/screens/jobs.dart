@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
-import '../models/job.dart';
-import '../models/invoice.dart';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class JobsPage extends StatefulWidget {
   const JobsPage({super.key});
@@ -12,36 +9,6 @@ class JobsPage extends StatefulWidget {
 }
 
 class _JobsPageState extends State<JobsPage> {
-  final List<Job> jobs = [];
-
-  // ================= SAVE JOBS =================
-  Future<void> saveJobs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final data = jobs.map((j) => j.toMap()).toList();
-    await prefs.setString('jobs', jsonEncode(data));
-  }
-
-  // ================= LOAD JOBS =================
-  Future<void> loadJobs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final jsonString = prefs.getString('jobs');
-
-    if (jsonString != null) {
-      final List decoded = jsonDecode(jsonString);
-
-      setState(() {
-        jobs.clear();
-        jobs.addAll(decoded.map((e) => Job.fromMap(e)).toList());
-      });
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    loadJobs();
-  }
-
   // ================= STATUS COLOR =================
   Color getStatusColor(String status) {
     switch (status) {
@@ -121,23 +88,17 @@ class _JobsPageState extends State<JobsPage> {
               child: const Text("Cancel"),
             ),
             ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  jobs.add(
-                    Job(
-                      client: clientController.text,
-                      pickup: pickupController.text,
-                      dropoff: dropoffController.text,
-                      price: double.tryParse(priceController.text) ?? 0,
-                      status: status,
-                      notes: notesController.text.isEmpty
-                          ? null
-                          : notesController.text,
-                    ),
-                  );
+              onPressed: () async {
+                await FirebaseFirestore.instance.collection('jobs').add({
+                  'client': clientController.text,
+                  'pickup': pickupController.text,
+                  'dropoff': dropoffController.text,
+                  'price': double.tryParse(priceController.text) ?? 0,
+                  'status': status,
+                  'notes': notesController.text,
+                  'createdAt': Timestamp.now(),
                 });
 
-                saveJobs();
                 Navigator.pop(context);
               },
               child: const Text("Save"),
@@ -146,44 +107,6 @@ class _JobsPageState extends State<JobsPage> {
         );
       },
     );
-  }
-
-  // ================= CREATE INVOICE =================
-  Future<void> createInvoiceFromJob(Job job) async {
-    final prefs = await SharedPreferences.getInstance();
-    final jsonString = prefs.getString('invoices');
-
-    List<Invoice> invoices = [];
-
-    if (jsonString != null) {
-      final List decoded = jsonDecode(jsonString);
-      invoices = decoded.map((e) => Invoice.fromMap(e)).toList();
-    }
-
-    final newInvoice = Invoice(
-      jobId: job.id,
-      client: job.client,
-      amount: job.price,
-    );
-
-    invoices.add(newInvoice);
-
-    final data = invoices.map((i) => i.toMap()).toList();
-    await prefs.setString('invoices', jsonEncode(data));
-
-    // OPTIONAL: auto mark job completed
-    setState(() {
-      final index = jobs.indexWhere((j) => j.id == job.id);
-      if (index != -1) {
-        jobs[index] = jobs[index].copyWith(status: "completed");
-      }
-    });
-
-    saveJobs();
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("Invoice created")));
   }
 
   // ================= UI =================
@@ -222,58 +145,70 @@ class _JobsPageState extends State<JobsPage> {
 
             const SizedBox(height: 10),
 
+            // ================= FIRESTORE LIST =================
             Expanded(
-              child: jobs.isEmpty
-                  ? const Center(child: Text("No jobs yet"))
-                  : ListView.builder(
-                      itemCount: jobs.length,
-                      itemBuilder: (context, index) {
-                        final job = jobs[index];
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('jobs')
+                    .orderBy('createdAt', descending: true)
+                    .snapshots(),
 
-                        return Card(
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: getStatusColor(job.status),
-                              child: Text(
-                                job.status[0].toUpperCase(),
-                                style: const TextStyle(color: Colors.white),
-                              ),
-                            ),
+                builder: (context, snapshot) {
+                  // Loading state
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                            title: Text(job.client),
+                  // No data
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return const Center(child: Text("No jobs yet"));
+                  }
 
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text("${job.pickup} → ${job.dropoff}"),
-                                Text("\$${job.price}"),
-                                if (job.notes != null)
-                                  Text("Notes: ${job.notes}"),
-                              ],
-                            ),
+                  final jobs = snapshot.data!.docs;
 
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.receipt),
-                                  onPressed: () => createInvoiceFromJob(job),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete),
-                                  onPressed: () {
-                                    setState(() {
-                                      jobs.removeAt(index);
-                                    });
-                                    saveJobs();
-                                  },
-                                ),
-                              ],
+                  return ListView.builder(
+                    itemCount: jobs.length,
+                    itemBuilder: (context, index) {
+                      final job = jobs[index];
+                      final data = job.data() as Map<String, dynamic>;
+
+                      return Card(
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: getStatusColor(data['status']),
+                            child: Text(
+                              data['status'][0].toUpperCase(),
+                              style: const TextStyle(color: Colors.white),
                             ),
                           ),
-                        );
-                      },
-                    ),
+
+                          title: Text(data['client']),
+
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("${data['pickup']} → ${data['dropoff']}"),
+                              Text("\$${data['price']}"),
+                              if (data['notes'] != null && data['notes'] != "")
+                                Text("Notes: ${data['notes']}"),
+                            ],
+                          ),
+
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete),
+                            onPressed: () {
+                              FirebaseFirestore.instance
+                                  .collection('jobs')
+                                  .doc(job.id)
+                                  .delete();
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
           ],
         ),
