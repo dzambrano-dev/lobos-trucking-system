@@ -35,7 +35,16 @@ class Dashboard extends StatelessWidget {
     });
   }
 
-  // ================= STREAM CARD =================
+  // ================= RECENT JOBS =================
+  Stream<QuerySnapshot> getRecentJobs() {
+    return FirebaseFirestore.instance
+        .collection('jobs')
+        .orderBy('createdAt', descending: true)
+        .limit(5)
+        .snapshots();
+  }
+
+  // ================= STAT CARD =================
   Widget buildStatCard({
     required String title,
     required IconData icon,
@@ -47,7 +56,25 @@ class Dashboard extends StatelessWidget {
     return StreamBuilder(
       stream: stream,
       builder: (context, snapshot) {
-        final value = snapshot.hasData ? formatter(snapshot.data) : "...";
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const DashboardCard(
+            title: "Loading...",
+            value: "...",
+            icon: Icons.hourglass_empty,
+            color: Colors.grey,
+          );
+        }
+
+        if (snapshot.hasError) {
+          return const DashboardCard(
+            title: "Error",
+            value: "!",
+            icon: Icons.error,
+            color: Colors.red,
+          );
+        }
+
+        final value = formatter(snapshot.data);
 
         return DashboardCard(
           title: title,
@@ -64,13 +91,15 @@ class Dashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Lobos Trucking")),
+      // 🔥 CLEAN APP BAR
+      appBar: AppBar(title: const Text("Lobos Trucking"), elevation: 0),
 
+      // ================= DRAWER =================
       drawer: Drawer(
         child: ListView(
           children: [
             const DrawerHeader(
-              decoration: BoxDecoration(color: Colors.blue),
+              decoration: BoxDecoration(color: Colors.black87),
               child: Text(
                 "Lobos Trucking",
                 style: TextStyle(color: Colors.white, fontSize: 22),
@@ -113,84 +142,150 @@ class Dashboard extends StatelessWidget {
         ),
       ),
 
+      // ================= BODY =================
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ================= STATS =================
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 20,
-              mainAxisSpacing: 20,
-
-              children: [
-                buildStatCard(
-                  title: "Clients",
-                  icon: Icons.people,
-                  color: Colors.blue,
-                  stream: getCount('clients'),
-                  formatter: (v) => v.toString(),
-                  onTap: () => goTo(context, const ClientsPage()),
+            // 🔥 HEADER
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(colors: [Colors.blue, Colors.indigo]),
+              ),
+              child: const Text(
+                "Dashboard Overview",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
                 ),
-
-                buildStatCard(
-                  title: "Jobs",
-                  icon: Icons.local_shipping,
-                  color: Colors.green,
-                  stream: getCount('jobs'),
-                  formatter: (v) => v.toString(),
-                  onTap: () => goTo(context, const JobsPage()),
-                ),
-
-                buildStatCard(
-                  title: "Invoices",
-                  icon: Icons.receipt_long,
-                  color: Colors.orange,
-                  stream: getCount('invoices'),
-                  formatter: (v) => v.toString(),
-                  onTap: () => goTo(context, const InvoicesPage()),
-                ),
-
-                buildStatCard(
-                  title: "Revenue",
-                  icon: Icons.attach_money,
-                  color: Colors.purple,
-                  stream: getRevenue(),
-                  formatter: (v) => "\$${v.toStringAsFixed(0)}",
-                ),
-              ],
+              ),
             ),
 
-            const SizedBox(height: 30),
+            Padding(
+              padding: const EdgeInsets.all(20),
 
-            // ================= RECENT ACTIVITY =================
-            const Text(
-              "System Status",
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 10),
-
-            Card(
               child: Column(
-                children: const [
-                  ActivityItem(
-                    icon: Icons.cloud_done,
-                    text: "Connected to Firebase",
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ================= STATS =================
+                  GridView.count(
+                    crossAxisCount: 2,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisSpacing: 15,
+                    mainAxisSpacing: 15,
+
+                    children: [
+                      buildStatCard(
+                        title: "Clients",
+                        icon: Icons.people,
+                        color: Colors.blue,
+                        stream: getCount('clients'),
+                        formatter: (v) => v.toString(),
+                        onTap: () => goTo(context, const ClientsPage()),
+                      ),
+
+                      buildStatCard(
+                        title: "Jobs",
+                        icon: Icons.local_shipping,
+                        color: Colors.green,
+                        stream: getCount('jobs'),
+                        formatter: (v) => v.toString(),
+                        onTap: () => goTo(context, const JobsPage()),
+                      ),
+
+                      buildStatCard(
+                        title: "Invoices",
+                        icon: Icons.receipt_long,
+                        color: Colors.orange,
+                        stream: getCount('invoices'),
+                        formatter: (v) => v.toString(),
+                        onTap: () => goTo(context, const InvoicesPage()),
+                      ),
+
+                      buildStatCard(
+                        title: "Revenue",
+                        icon: Icons.attach_money,
+                        color: Colors.purple,
+                        stream: getRevenue(),
+                        formatter: (v) => "\$${v.toStringAsFixed(2)}",
+                      ),
+                    ],
                   ),
-                  Divider(height: 1),
-                  ActivityItem(
-                    icon: Icons.sync,
-                    text: "Live data updates enabled",
+
+                  const SizedBox(height: 30),
+
+                  // ================= RECENT JOBS =================
+                  const Text(
+                    "Recent Jobs",
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
-                  Divider(height: 1),
-                  ActivityItem(
-                    icon: Icons.check_circle,
-                    text: "System operational",
+
+                  const SizedBox(height: 10),
+
+                  StreamBuilder<QuerySnapshot>(
+                    stream: getRecentJobs(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      final jobs = snapshot.data!.docs;
+
+                      if (jobs.isEmpty) {
+                        return const Text("No recent jobs.");
+                      }
+
+                      return Column(
+                        children: jobs.map((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+
+                          return Card(
+                            child: ListTile(
+                              leading: const Icon(Icons.local_shipping),
+                              title: Text(data['client'] ?? 'Unknown'),
+                              subtitle: Text(
+                                "${data['pickup']} → ${data['dropoff']}",
+                              ),
+                              trailing: Text("\$${data['price'] ?? 0}"),
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 30),
+
+                  // ================= SYSTEM STATUS =================
+                  const Text(
+                    "System Status",
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  Card(
+                    child: Column(
+                      children: const [
+                        ActivityItem(
+                          icon: Icons.cloud_done,
+                          text: "Connected to Firebase",
+                        ),
+                        Divider(height: 1),
+                        ActivityItem(
+                          icon: Icons.sync,
+                          text: "Live data updates enabled",
+                        ),
+                        Divider(height: 1),
+                        ActivityItem(
+                          icon: Icons.check_circle,
+                          text: "System operational",
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -223,36 +318,28 @@ class DashboardCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(15),
 
       child: Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+
         child: Padding(
           padding: const EdgeInsets.all(20),
 
-          child: Row(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircleAvatar(
-                backgroundColor: color.withOpacity(0.15),
-                radius: 28,
-                child: Icon(icon, size: 28, color: color),
-              ),
-
-              const SizedBox(width: 15),
-
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title),
-                  const SizedBox(height: 5),
-                  Text(
-                    value,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
+              Icon(icon, size: 30, color: color),
+              const SizedBox(height: 10),
+              Text(title),
+              const SizedBox(height: 5),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),

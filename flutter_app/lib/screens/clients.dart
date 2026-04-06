@@ -17,51 +17,135 @@ class _ClientsPageState extends State<ClientsPage> {
   final TextEditingController addressController = TextEditingController();
 
   final _formKey = GlobalKey<FormState>();
-
   bool isSaving = false;
 
-  // ================= SAVE CLIENT =================
+  // ================= SAVE =================
   Future<void> saveClient() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      isSaving = true;
+    setState(() => isSaving = true);
+
+    await FirebaseFirestore.instance.collection('clients').add({
+      "name": companyController.text,
+      "contact": contactController.text,
+      "phone": phoneController.text,
+      "email": emailController.text,
+      "address": addressController.text,
+      "createdAt": Timestamp.now(),
     });
 
-    try {
-      await FirebaseFirestore.instance.collection('clients').add({
-        "name": companyController.text,
-        "contact": contactController.text,
-        "phone": phoneController.text,
-        "email": emailController.text,
-        "address": addressController.text,
-        "createdAt": Timestamp.now(),
-      });
+    companyController.clear();
+    contactController.clear();
+    phoneController.clear();
+    emailController.clear();
+    addressController.clear();
 
-      // Clear inputs
-      companyController.clear();
-      contactController.clear();
-      phoneController.clear();
-      emailController.clear();
-      addressController.clear();
+    setState(() => isSaving = false);
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Client saved")));
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error: $e")));
-    }
-
-    setState(() {
-      isSaving = false;
-    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text("Client saved")));
   }
 
-  // ================= DELETE CLIENT =================
+  // ================= DELETE =================
   Future<void> deleteClient(String id) async {
-    await FirebaseFirestore.instance.collection('clients').doc(id).delete();
+    final confirm = await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Delete Client"),
+        content: const Text("Are you sure?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await FirebaseFirestore.instance.collection('clients').doc(id).delete();
+    }
+  }
+
+  // ================= EDIT =================
+  void editClient(String id, Map<String, dynamic> data) {
+    companyController.text = data['name'] ?? '';
+    contactController.text = data['contact'] ?? '';
+    phoneController.text = data['phone'] ?? '';
+    emailController.text = data['email'] ?? '';
+    addressController.text = data['address'] ?? '';
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Edit Client"),
+        content: buildForm(),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await FirebaseFirestore.instance
+                  .collection('clients')
+                  .doc(id)
+                  .update({
+                    "name": companyController.text,
+                    "contact": contactController.text,
+                    "phone": phoneController.text,
+                    "email": emailController.text,
+                    "address": addressController.text,
+                  });
+
+              Navigator.pop(context);
+            },
+            child: const Text("Save"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ================= FORM UI =================
+  Widget buildForm() {
+    return Form(
+      key: _formKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          buildInput(companyController, "Company Name"),
+          buildInput(contactController, "Contact Name"),
+          buildInput(phoneController, "Phone", TextInputType.phone),
+          buildInput(emailController, "Email", TextInputType.emailAddress),
+          buildInput(addressController, "Address"),
+        ],
+      ),
+    );
+  }
+
+  Widget buildInput(
+    TextEditingController controller,
+    String label, [
+    TextInputType? type,
+  ]) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: TextFormField(
+        controller: controller,
+        keyboardType: type,
+        decoration: InputDecoration(
+          labelText: label,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        validator: (v) => v!.isEmpty ? "Required" : null,
+      ),
+    );
   }
 
   // ================= UI =================
@@ -71,86 +155,54 @@ class _ClientsPageState extends State<ClientsPage> {
       appBar: AppBar(title: const Text("Clients")),
 
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(30),
+        padding: const EdgeInsets.all(20),
 
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ================= FORM =================
-            const Text(
-              "Add Client",
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 20),
-
-            Form(
-              key: _formKey,
-              child: Column(
-                children: [
-                  TextFormField(
-                    controller: companyController,
-                    decoration: const InputDecoration(
-                      labelText: "Company Name",
+            // ================= FORM CARD =================
+            Card(
+              elevation: 3,
+              child: Padding(
+                padding: const EdgeInsets.all(15),
+                child: Column(
+                  children: [
+                    const Text(
+                      "Add Client",
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    validator: (v) => v!.isEmpty ? "Required" : null,
-                  ),
 
-                  const SizedBox(height: 10),
+                    const SizedBox(height: 10),
 
-                  TextFormField(
-                    controller: contactController,
-                    decoration: const InputDecoration(
-                      labelText: "Contact Name",
+                    buildForm(),
+
+                    const SizedBox(height: 10),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: isSaving ? null : saveClient,
+                        child: isSaving
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
+                            : const Text("Save Client"),
+                      ),
                     ),
-                    validator: (v) => v!.isEmpty ? "Required" : null,
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  TextFormField(
-                    controller: phoneController,
-                    decoration: const InputDecoration(labelText: "Phone"),
-                    validator: (v) => v!.isEmpty ? "Required" : null,
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  TextFormField(
-                    controller: emailController,
-                    decoration: const InputDecoration(labelText: "Email"),
-                    validator: (v) => v!.isEmpty ? "Required" : null,
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  TextFormField(
-                    controller: addressController,
-                    decoration: const InputDecoration(labelText: "Address"),
-                    validator: (v) => v!.isEmpty ? "Required" : null,
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: isSaving ? null : saveClient,
-                      child: isSaving
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text("Save Client"),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
 
-            const SizedBox(height: 40),
+            const SizedBox(height: 30),
 
             // ================= CLIENT LIST =================
             const Text(
               "Clients",
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
 
             const SizedBox(height: 10),
@@ -160,7 +212,6 @@ class _ClientsPageState extends State<ClientsPage> {
                   .collection('clients')
                   .orderBy('createdAt', descending: true)
                   .snapshots(),
-
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
@@ -172,36 +223,31 @@ class _ClientsPageState extends State<ClientsPage> {
                   return const Text("No clients yet");
                 }
 
-                return SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
-                    columns: const [
-                      DataColumn(label: Text("Company")),
-                      DataColumn(label: Text("Contact")),
-                      DataColumn(label: Text("Phone")),
-                      DataColumn(label: Text("Email")),
-                      DataColumn(label: Text("Actions")),
-                    ],
-                    rows: clients.map((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
+                return Column(
+                  children: clients.map((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
 
-                      return DataRow(
-                        cells: [
-                          DataCell(Text(data["name"] ?? "")),
-                          DataCell(Text(data["contact"] ?? "")),
-                          DataCell(Text(data["phone"] ?? "")),
-                          DataCell(Text(data["email"] ?? "")),
-
-                          DataCell(
+                    return Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.business),
+                        title: Text(data["name"] ?? ""),
+                        subtitle: Text("${data["contact"]} • ${data["phone"]}"),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.blue),
+                              onPressed: () => editClient(doc.id, data),
+                            ),
                             IconButton(
                               icon: const Icon(Icons.delete, color: Colors.red),
                               onPressed: () => deleteClient(doc.id),
                             ),
-                          ),
-                        ],
-                      );
-                    }).toList(),
-                  ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 );
               },
             ),

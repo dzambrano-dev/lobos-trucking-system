@@ -1,4 +1,3 @@
-// NEED CHRIS INPUT
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/invoice.dart';
@@ -19,7 +18,7 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
   Job? job;
   bool isLoading = true;
 
-  // ================= LOAD JOB FROM FIRESTORE =================
+  // ================= LOAD JOB =================
   Future<void> loadJob() async {
     try {
       final doc = await FirebaseFirestore.instance
@@ -28,16 +27,13 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
           .get();
 
       if (doc.exists) {
-        setState(() {
-          job = Job.fromFirestore(doc.id, doc.data() as Map<String, dynamic>);
-          isLoading = false;
-        });
-      } else {
-        setState(() => isLoading = false);
+        job = Job.fromFirestore(doc.id, doc.data() as Map<String, dynamic>);
       }
     } catch (e) {
-      setState(() => isLoading = false);
+      // silent fail (can log later)
     }
+
+    setState(() => isLoading = false);
   }
 
   @override
@@ -46,15 +42,25 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
     loadJob();
   }
 
-  // ================= STATUS COLOR =================
+  // ================= HELPERS =================
+  String formatCurrency(double amount) {
+    return "\$${amount.toStringAsFixed(2)}";
+  }
+
+  String formatDate(DateTime date) {
+    return "${date.month}/${date.day}/${date.year}";
+  }
+
   Color getStatusColor(String status) {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case "completed":
         return Colors.green;
       case "in progress":
         return Colors.orange;
-      default:
+      case "pending":
         return Colors.grey;
+      default:
+        return Colors.blueGrey;
     }
   }
 
@@ -67,39 +73,61 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
     pdf.addPage(
       pw.Page(
         build: (context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                "INVOICE",
-                style: pw.TextStyle(
-                  fontSize: 24,
-                  fontWeight: pw.FontWeight.bold,
+          return pw.Padding(
+            padding: const pw.EdgeInsets.all(20),
+
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                // HEADER
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      "LOBOS TRUCKING",
+                      style: pw.TextStyle(
+                        fontSize: 20,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.Text("INVOICE"),
+                  ],
                 ),
-              ),
 
-              pw.SizedBox(height: 20),
+                pw.SizedBox(height: 20),
 
-              pw.Text("Client: ${widget.invoice.client}"),
-              pw.Text("Route: ${job!.pickup} → ${job!.dropoff}"),
-              pw.Text("Amount: \$${widget.invoice.amount}"),
-              pw.Text("Status: ${job!.status}"),
+                pw.Text("Invoice #: ${widget.invoice.id.substring(0, 6)}"),
+                pw.Text("Date: ${formatDate(widget.invoice.createdAt)}"),
 
-              if (job!.notes != null && job!.notes!.isNotEmpty)
-                pw.Text("Notes: ${job!.notes}"),
+                pw.Divider(),
 
-              pw.SizedBox(height: 10),
+                pw.Text("Client: ${widget.invoice.client}"),
 
-              pw.Text(
-                "Date: ${widget.invoice.createdAt.toLocal().toString().split('.')[0]}",
-              ),
+                pw.SizedBox(height: 10),
 
-              pw.SizedBox(height: 20),
+                pw.Text("Route: ${job!.pickup} → ${job!.dropoff}"),
 
-              pw.Divider(),
+                pw.SizedBox(height: 10),
 
-              pw.Text("Thank you for your business."),
-            ],
+                pw.Text(
+                  "Amount Due: ${formatCurrency(widget.invoice.amount)}",
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                ),
+
+                pw.SizedBox(height: 10),
+
+                pw.Text("Status: ${job!.status}"),
+
+                if (job!.notes != null && job!.notes!.isNotEmpty)
+                  pw.Text("Notes: ${job!.notes}"),
+
+                pw.SizedBox(height: 30),
+
+                pw.Divider(),
+
+                pw.Text("Thank you for your business."),
+              ],
+            ),
           );
         },
       ),
@@ -122,76 +150,118 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
             : job == null
             ? const Center(child: Text("Job not found"))
             : Card(
-                elevation: 3,
+                elevation: 5,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15),
+                ),
+
                 child: Padding(
                   padding: const EdgeInsets.all(20),
 
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        "INVOICE",
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      // ================= HEADER =================
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            "INVOICE",
+                            style: TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+
+                          Text(
+                            "#${widget.invoice.id.substring(0, 6)}",
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                        ],
                       ),
 
                       const SizedBox(height: 20),
 
-                      Text(
-                        "Client: ${widget.invoice.client}",
-                        style: const TextStyle(fontSize: 18),
-                      ),
-
-                      const SizedBox(height: 10),
-
+                      // ================= CLIENT =================
                       const Text(
-                        "Route:",
+                        "Client",
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-
-                      Text("${job!.pickup} → ${job!.dropoff}"),
-
-                      const SizedBox(height: 10),
-
                       Text(
-                        "Amount: \$${widget.invoice.amount}",
-                        style: const TextStyle(fontSize: 18),
+                        widget.invoice.client,
+                        style: const TextStyle(fontSize: 16),
                       ),
 
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 20),
 
+                      // ================= ROUTE =================
+                      const Text(
+                        "Route",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text("${job!.pickup} → ${job!.dropoff}"),
+
+                      const SizedBox(height: 20),
+
+                      // ================= AMOUNT =================
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            "Amount",
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            formatCurrency(widget.invoice.amount),
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 15),
+
+                      // ================= STATUS =================
                       Row(
                         children: [
                           const Text("Status: "),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 5,
+                              horizontal: 12,
+                              vertical: 6,
                             ),
                             decoration: BoxDecoration(
                               color: getStatusColor(job!.status),
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
-                              job!.status,
+                              job!.status.toUpperCase(),
                               style: const TextStyle(color: Colors.white),
                             ),
                           ),
                         ],
                       ),
 
-                      const SizedBox(height: 10),
-
-                      if (job!.notes != null && job!.notes!.isNotEmpty)
-                        Text("Notes: ${job!.notes}"),
-
                       const SizedBox(height: 20),
 
-                      Text(
-                        "Date: ${widget.invoice.createdAt.toLocal().toString().split('.')[0]}",
-                      ),
+                      // ================= NOTES =================
+                      if (job!.notes != null && job!.notes!.isNotEmpty)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Notes",
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            Text(job!.notes!),
+                            const SizedBox(height: 20),
+                          ],
+                        ),
+
+                      // ================= DATE =================
+                      Text("Date: ${formatDate(widget.invoice.createdAt)}"),
 
                       const SizedBox(height: 20),
 
@@ -206,11 +276,13 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
 
                       const SizedBox(height: 20),
 
+                      // ================= BUTTON =================
                       SizedBox(
                         width: double.infinity,
-                        child: ElevatedButton(
+                        child: ElevatedButton.icon(
                           onPressed: generatePDF,
-                          child: const Text("Download / Print Invoice"),
+                          icon: const Icon(Icons.picture_as_pdf),
+                          label: const Text("Download / Print Invoice"),
                         ),
                       ),
                     ],
