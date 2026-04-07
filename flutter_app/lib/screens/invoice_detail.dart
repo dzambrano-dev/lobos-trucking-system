@@ -18,28 +18,41 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
   Job? job;
   bool isLoading = true;
 
+  late Invoice invoice;
+
+  @override
+  void initState() {
+    super.initState();
+    invoice = widget.invoice;
+    loadJob();
+  }
+
   // ================= LOAD JOB =================
   Future<void> loadJob() async {
     try {
       final doc = await FirebaseFirestore.instance
           .collection('jobs')
-          .doc(widget.invoice.jobId)
+          .doc(invoice.jobId)
           .get();
 
       if (doc.exists) {
         job = Job.fromFirestore(doc.id, doc.data() as Map<String, dynamic>);
       }
-    } catch (e) {
-      // silent fail (can log later)
-    }
+    } catch (_) {}
 
     setState(() => isLoading = false);
   }
 
-  @override
-  void initState() {
-    super.initState();
-    loadJob();
+  // ================= UPDATE STATUS =================
+  Future<void> updateStatus(String newStatus) async {
+    await FirebaseFirestore.instance
+        .collection('invoices')
+        .doc(invoice.id)
+        .update({"status": newStatus});
+
+    setState(() {
+      invoice = invoice.copyWith(status: newStatus);
+    });
   }
 
   // ================= HELPERS =================
@@ -52,15 +65,13 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
   }
 
   Color getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case "completed":
+    switch (status) {
+      case "paid":
         return Colors.green;
-      case "in progress":
-        return Colors.orange;
-      case "pending":
-        return Colors.grey;
+      case "overdue":
+        return Colors.red;
       default:
-        return Colors.blueGrey;
+        return Colors.orange;
     }
   }
 
@@ -75,33 +86,25 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
         build: (context) {
           return pw.Padding(
             padding: const pw.EdgeInsets.all(20),
-
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                // HEADER
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Text(
-                      "LOBOS TRUCKING",
-                      style: pw.TextStyle(
-                        fontSize: 20,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                    pw.Text("INVOICE"),
-                  ],
+                pw.Text(
+                  "LOBOS TRUCKING",
+                  style: pw.TextStyle(
+                    fontSize: 20,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
                 ),
 
-                pw.SizedBox(height: 20),
+                pw.SizedBox(height: 10),
 
-                pw.Text("Invoice #: ${widget.invoice.id.substring(0, 6)}"),
-                pw.Text("Date: ${formatDate(widget.invoice.createdAt)}"),
+                pw.Text("Invoice #: ${invoice.invoiceNumber}"),
+                pw.Text("Date: ${formatDate(invoice.createdAt)}"),
 
                 pw.Divider(),
 
-                pw.Text("Client: ${widget.invoice.client}"),
+                pw.Text("Client: ${invoice.client}"),
 
                 pw.SizedBox(height: 10),
 
@@ -110,16 +113,14 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                 pw.SizedBox(height: 10),
 
                 pw.Text(
-                  "Amount Due: ${formatCurrency(widget.invoice.amount)}",
+                  "Amount Due: ${formatCurrency(invoice.amount)}",
                   style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                 ),
 
-                pw.SizedBox(height: 10),
+                pw.Text("Status: ${invoice.status.toUpperCase()}"),
 
-                pw.Text("Status: ${job!.status}"),
-
-                if (job!.notes != null && job!.notes!.isNotEmpty)
-                  pw.Text("Notes: ${job!.notes}"),
+                if (invoice.notes != null && invoice.notes!.isNotEmpty)
+                  pw.Text("Notes: ${invoice.notes}"),
 
                 pw.SizedBox(height: 30),
 
@@ -174,10 +175,28 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                           ),
 
                           Text(
-                            "#${widget.invoice.id.substring(0, 6)}",
+                            invoice.invoiceNumber,
                             style: const TextStyle(color: Colors.grey),
                           ),
                         ],
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // ================= STATUS BADGE =================
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: getStatusColor(invoice.status),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          invoice.status.toUpperCase(),
+                          style: const TextStyle(color: Colors.white),
+                        ),
                       ),
 
                       const SizedBox(height: 20),
@@ -187,10 +206,7 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                         "Client",
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      Text(
-                        widget.invoice.client,
-                        style: const TextStyle(fontSize: 16),
-                      ),
+                      Text(invoice.client),
 
                       const SizedBox(height: 20),
 
@@ -212,7 +228,7 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                           Text(
-                            formatCurrency(widget.invoice.amount),
+                            formatCurrency(invoice.amount),
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
@@ -221,33 +237,10 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                         ],
                       ),
 
-                      const SizedBox(height: 15),
-
-                      // ================= STATUS =================
-                      Row(
-                        children: [
-                          const Text("Status: "),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: getStatusColor(job!.status),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              job!.status.toUpperCase(),
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                          ),
-                        ],
-                      ),
-
                       const SizedBox(height: 20),
 
                       // ================= NOTES =================
-                      if (job!.notes != null && job!.notes!.isNotEmpty)
+                      if (invoice.notes != null && invoice.notes!.isNotEmpty)
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -255,13 +248,12 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                               "Notes",
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
-                            Text(job!.notes!),
+                            Text(invoice.notes!),
                             const SizedBox(height: 20),
                           ],
                         ),
 
-                      // ================= DATE =================
-                      Text("Date: ${formatDate(widget.invoice.createdAt)}"),
+                      Text("Date: ${formatDate(invoice.createdAt)}"),
 
                       const SizedBox(height: 20),
 
@@ -276,7 +268,34 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
 
                       const SizedBox(height: 20),
 
-                      // ================= BUTTON =================
+                      // ================= ACTION BUTTONS =================
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () => updateStatus("paid"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                              ),
+                              child: const Text("Mark Paid"),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () => updateStatus("overdue"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                              ),
+                              child: const Text("Mark Overdue"),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 15),
+
+                      // ================= PDF BUTTON =================
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(

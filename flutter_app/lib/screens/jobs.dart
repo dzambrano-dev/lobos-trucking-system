@@ -22,6 +22,44 @@ class _JobsPageState extends State<JobsPage> {
     }
   }
 
+  // ================= CREATE INVOICE =================
+  Future<void> createInvoice(Job job) async {
+    // 🚫 Only allow completed jobs
+    if (job.status != "completed") {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Complete job before invoicing")),
+      );
+      return;
+    }
+
+    final docRef = FirebaseFirestore.instance.collection('invoices').doc();
+
+    // 🔥 Generate invoice number
+    String generateInvoiceNumber() {
+      final now = DateTime.now();
+      return "INV-${now.year}${now.month}${now.day}-${now.millisecondsSinceEpoch % 10000}";
+    }
+
+    final invoice = {
+      "jobId": job.id,
+      "client": job.clientName,
+      "amount": job.price,
+
+      // ⚠️ MUST be Timestamp
+      "createdAt": Timestamp.fromDate(DateTime.now()),
+
+      "status": "pending",
+      "invoiceNumber": generateInvoiceNumber(),
+      "notes": job.notes ?? "",
+    };
+
+    await docRef.set(invoice);
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text("Invoice created")));
+  }
+
   // ================= CREATE JOB =================
   void openCreateJobDialog() {
     final pickupController = TextEditingController();
@@ -152,9 +190,8 @@ class _JobsPageState extends State<JobsPage> {
                       return;
                     }
 
-                    // ================= CREATE JOB OBJECT =================
                     final newJob = Job(
-                      id: '', // Firestore will generate
+                      id: '',
                       clientId: selectedClientId!,
                       clientName: selectedClientName ?? '',
                       pickup: pickupController.text,
@@ -165,7 +202,6 @@ class _JobsPageState extends State<JobsPage> {
                       createdAt: DateTime.now(),
                     );
 
-                    // ================= SAVE =================
                     await FirebaseFirestore.instance
                         .collection('jobs')
                         .add(newJob.toMap());
@@ -184,33 +220,54 @@ class _JobsPageState extends State<JobsPage> {
 
   // ================= JOB CARD =================
   Widget buildJobCard(Job job) {
-    return Card(
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: getStatusColor(job.status),
-          child: Text(
-            job.status[0].toUpperCase(),
-            style: const TextStyle(color: Colors.white),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Card(
+        elevation: 3,
+        child: ListTile(
+          leading: CircleAvatar(
+            backgroundColor: getStatusColor(job.status),
+            child: Text(
+              job.status[0].toUpperCase(),
+              style: const TextStyle(color: Colors.white),
+            ),
           ),
-        ),
 
-        title: Text(job.clientName),
+          title: Text(job.clientName),
 
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("${job.pickup} → ${job.dropoff}"),
-            Text("\$${job.price}"),
-            if (job.notes != null && job.notes!.isNotEmpty)
-              Text("Notes: ${job.notes}"),
-          ],
-        ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("${job.pickup} → ${job.dropoff}"),
+              Text("\$${job.price.toStringAsFixed(2)}"),
+              if (job.notes != null && job.notes!.isNotEmpty)
+                Text("Notes: ${job.notes}"),
+            ],
+          ),
 
-        trailing: IconButton(
-          icon: const Icon(Icons.delete),
-          onPressed: () {
-            FirebaseFirestore.instance.collection('jobs').doc(job.id).delete();
-          },
+          // 🔥 ACTION BUTTONS
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 🧾 CREATE INVOICE
+              IconButton(
+                icon: const Icon(Icons.receipt),
+                color: job.status == "completed" ? Colors.green : Colors.grey,
+                onPressed: () => createInvoice(job),
+              ),
+
+              // ❌ DELETE
+              IconButton(
+                icon: const Icon(Icons.delete),
+                onPressed: () {
+                  FirebaseFirestore.instance
+                      .collection('jobs')
+                      .doc(job.id)
+                      .delete();
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -259,7 +316,6 @@ class _JobsPageState extends State<JobsPage> {
                     .collection('jobs')
                     .orderBy('createdAt', descending: true)
                     .snapshots(),
-
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
