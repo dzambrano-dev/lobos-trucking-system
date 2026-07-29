@@ -1,0 +1,54 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userProfile() {
+      return firestore.get(
+        /databases/(default)/documents/users/$(request.auth.uid)
+      ).data;
+    }
+
+    function activeUser() {
+      return signedIn() && userProfile().active == true;
+    }
+
+    function canManageLoads() {
+      return activeUser()
+        && userProfile().permissions.manageLoads == true;
+    }
+
+    function load(loadId) {
+      return firestore.get(
+        /databases/(default)/documents/loads/$(loadId)
+      ).data;
+    }
+
+    function assignedDriver(loadId) {
+      return activeUser()
+        && userProfile().permissions.updateAssignedLoads == true
+        && load(loadId).assignedDriverId == request.auth.uid;
+    }
+
+    match /load-signatures/{loadId}/{fileName} {
+      allow read: if canManageLoads() || assignedDriver(loadId);
+      allow create: if assignedDriver(loadId)
+        && load(loadId).status == 'in_transit'
+        && fileName.matches(request.auth.uid + '-[0-9]+[.]png')
+        && request.resource.contentType == 'image/png'
+        && request.resource.size > 0
+        && request.resource.size < 2 * 1024 * 1024;
+      allow delete: if assignedDriver(loadId)
+        && load(loadId).status != 'delivered'
+        && resource.metadata.capturedBy == request.auth.uid;
+      allow update: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

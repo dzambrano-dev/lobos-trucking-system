@@ -1,45 +1,70 @@
-# Lobos Trucking Database (CLI)
+# Lobos Trucking Operations
 
-This project is a lightweight command-line database application designed to manage clients, jobs, and invoices for a small trucking operation. It uses SQLite for data storage and Python for a simple administrative interface.
+Private operations software for a small family trucking company. The production
+application is designed for office staff and drivers with limited technical
+experience.
 
-The goal of this project is to demonstrate core systems concepts such as relational database design, data integrity, and safe database interaction through a CLI-based workflow.
+## Current production milestone
 
----
+This branch establishes the secure delivery workflow:
 
-## Features
+1. An authorized team member creates a load and assigns a driver.
+2. The assigned driver accepts the load.
+3. The driver records arrival at pickup.
+4. The driver records pickup and transit.
+5. The driver can report a delay or problem without losing the current
+   progress state.
+6. The driver completes delivery only after capturing the customer's
+   signature.
 
-- Relational database schema with enforced foreign keys
-- Separation of schema definition and sample data
-- Command-line interface for basic administrative tasks
-- Parameterized SQL queries to prevent SQL injection
-- Clear distinction between read and write operations
+Every change records the authenticated user and a server timestamp.
 
----
+## Architecture
 
-## Database Design
+- **Flutter:** installable web and mobile interface
+- **Firebase Authentication:** private, individual employee accounts
+- **Cloud Firestore:** synchronized loads, users, clients, and activity events
+- **Cloud Storage:** customer signature images
+- **Firebase Hosting:** production web deployment
+- **Firebase Security Rules:** capability and assignment-based authorization
 
-The database consists of three related tables:
+The earlier FastAPI/SQLite proof of concept remains under `backend/` for
+historical reference. It is not part of the production runtime and should not
+be deployed.
 
-- **clients**: stores client contact information
-- **jobs**: tracks work performed for each client
-- **invoices**: records billing and payment status for completed jobs
+## Repository layout
 
-Relationships are enforced using foreign keys to ensure referential integrity. Business rules such as one invoice per job and valid job statuses are handled at the database level.
+```text
+flutter_app/        Production Flutter and Firebase application
+firebase_tests/     Firestore authorization tests
+backend/            Legacy proof of concept; not deployed
+.github/workflows/  Flutter and Firebase rules validation
+```
 
----
+## Security model
 
-## File Structure
-  app.py # Command-line interface and application logic
-  schema.sql # Database schema and table definitions
-  sample_data.sql # Fictional demo data for testing
-  README.md
+Users receive explicit capabilities instead of relying on loosely defined job
+titles:
 
----
+- `manageUsers`
+- `manageClients`
+- `manageLoads`
+- `viewAllLoads`
+- `updateAssignedLoads`
 
-## How to Run
+Drivers can read only loads assigned to their account. They cannot reassign a
+load, edit its client or route, skip progress states, clear an office alert, or
+mark a load delivered without a customer signature. Loads and activity events
+cannot be permanently deleted from client applications.
 
-1. Ensure Python 3 is installed.
-2. From the project directory, run:
+See [`flutter_app/README.md`](flutter_app/README.md) for local setup,
+Firebase configuration, testing, and deployment instructions.
 
-```bash
-python app.py
+## Roadmap
+
+- Secure load workflow and customer signatures
+- Search, filtering, reassignment, and archival
+- Invoice migration with immutable invoice numbers
+- PDF/CSV exports
+- Proof-of-delivery document support
+- Production backups, monitoring, and staff onboarding

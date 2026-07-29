@@ -12,6 +12,11 @@ build/
 .flutter-plugins
 .flutter-plugins-dependencies
 
+# Node / Firebase emulators
+node_modules/
+*.log
+.firebase/
+
 # VSCode
 .vscode/
 

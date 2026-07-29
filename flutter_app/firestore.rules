@@ -1,0 +1,289 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function hasActiveProfile() {
+      return signedIn()
+        && exists(userPath())
+        && get(userPath()).data.active == true;
+    }
+
+    function hasPermission(permission) {
+      return hasActiveProfile()
+        && get(userPath()).data.permissions[permission] == true;
+    }
+
+    function isAssignedDriver(loadData) {
+      return hasActiveProfile()
+        && loadData.assignedDriverId == request.auth.uid
+        && get(userPath()).data.permissions.updateAssignedLoads == true;
+    }
+
+    function isActiveDriver(uid) {
+      let path = /databases/$(database)/documents/users/$(uid);
+      return exists(path)
+        && get(path).data.active == true
+        && get(path).data.permissions.updateAssignedLoads == true;
+    }
+
+    function canReadLoad(loadData) {
+      return hasPermission('viewAllLoads')
+        || hasPermission('manageLoads')
+        || isAssignedDriver(loadData);
+    }
+
+    function hasRequiredLoadFields(loadData) {
+      return loadData.keys().hasAll([
+          'loadNumber',
+          'clientId',
+          'clientName',
+          'pickupAddress',
+          'deliveryAddress',
+          'scheduledPickupAt',
+          'assignedDriverId',
+          'assignedDriverName',
+          'status',
+          'needsAttention',
+          'createdBy',
+          'createdAt',
+          'updatedAt'
+        ])
+        && loadData.keys().hasOnly([
+          'loadNumber',
+          'clientId',
+          'clientName',
+          'pickupAddress',
+          'deliveryAddress',
+          'scheduledPickupAt',
+          'assignedDriverId',
+          'assignedDriverName',
+          'status',
+          'needsAttention',
+          'issueSummary',
+          'delivery',
+          'createdBy',
+          'createdAt',
+          'updatedAt'
+        ])
+        && loadData.loadNumber is string
+        && loadData.clientId is string
+        && loadData.clientName is string
+        && loadData.pickupAddress is string
+        && loadData.deliveryAddress is string
+        && loadData.assignedDriverId is string
+        && loadData.assignedDriverName is string
+        && loadData.status in [
+          'assigned',
+          'accepted',
+          'arrived_at_pickup',
+          'in_transit',
+          'delivered',
+          'cancelled'
+        ]
+        && loadData.needsAttention is bool;
+    }
+
+    function isAllowedProgressTransition(before, after) {
+      return after == before
+        || (before == 'assigned' && after == 'accepted')
+        || (before == 'accepted' && after == 'arrived_at_pickup')
+        || (before == 'arrived_at_pickup' && after == 'in_transit')
+        || (before == 'in_transit' && after == 'delivered');
+    }
+
+    function validDriverIssueMutation(before, after) {
+      let changed = after.diff(before).affectedKeys();
+      return !changed.hasAny(['needsAttention', 'issueSummary'])
+        || (
+          after.needsAttention == true
+          && after.issueSummary is string
+          && after.issueSummary.size() > 0
+          && after.issueSummary.size() <= 1000
+        );
+    }
+
+    function validDriverDeliveryMutation(loadId, before, after) {
+      let changed = after.diff(before).affectedKeys();
+      let deliveryRequired = before.status != 'delivered'
+        && after.status == 'delivered';
+      return (!deliveryRequired && !changed.hasAny(['delivery']))
+        || (
+          before.status == 'in_transit'
+          && after.status == 'delivered'
+          && after.delivery.keys().hasOnly([
+            'signatureStoragePath',
+            'signedAt',
+            'capturedBy'
+          ])
+          && after.delivery.signatureStoragePath is string
+          && after.delivery.signatureStoragePath.matches(
+            'load-signatures/' + loadId + '/' + request.auth.uid + '-[0-9]+[.]png'
+          )
+          && after.delivery.signedAt == request.time
+          && after.delivery.capturedBy == request.auth.uid
+        );
+    }
+
+    function validAssignedDriverUpdate(loadId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let changed = after.diff(before).affectedKeys();
+
+      return isAssignedDriver(before)
+        && before.status != 'delivered'
+        && before.status != 'cancelled'
+        && changed.hasOnly([
+          'status',
+          'needsAttention',
+          'issueSummary',
+          'delivery',
+          'updatedAt'
+        ])
+        && after.updatedAt == request.time
+        && isAllowedProgressTransition(before.status, after.status)
+        && validDriverIssueMutation(before, after)
+        && validDriverDeliveryMutation(loadId, before, after);
+    }
+
+    match /users/{uid} {
+      allow read: if hasActiveProfile()
+        && (
+          uid == request.auth.uid
+          || hasPermission('manageUsers')
+          || hasPermission('manageLoads')
+        );
+      allow create, update: if hasPermission('manageUsers');
+      allow delete: if false;
+    }
+
+    match /clients/{clientId} {
+      allow read: if hasPermission('manageClients')
+        || hasPermission('manageLoads')
+        || hasPermission('viewAllLoads');
+      allow create, update: if hasPermission('manageClients');
+      allow delete: if false;
+    }
+
+    match /loads/{loadId} {
+      allow read: if canReadLoad(resource.data);
+      allow create: if hasPermission('manageLoads')
+        && hasRequiredLoadFields(request.resource.data)
+        && isActiveDriver(request.resource.data.assignedDriverId)
+        && request.resource.data.status == 'assigned'
+        && request.resource.data.needsAttention == false
+        && !request.resource.data.keys().hasAny(['delivery'])
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if (
+          hasPermission('manageLoads')
+          && hasRequiredLoadFields(request.resource.data)
+          && isActiveDriver(request.resource.data.assignedDriverId)
+          && request.resource.data.updatedAt == request.time
+          && validDriverDeliveryMutation(
+            loadId,
+            resource.data,
+            request.resource.data
+          )
+          && (
+            resource.data.status != 'delivered'
+            || request.resource.data.status == 'delivered'
+          )
+        )
+        || validAssignedDriverUpdate(loadId);
+      allow delete: if false;
+
+      match /events/{eventId} {
+        function parentPath() {
+          return /databases/$(database)/documents/loads/$(loadId);
+        }
+
+        function parentLoad() {
+          return get(parentPath()).data;
+        }
+
+        function parentLoadAfter() {
+          return getAfter(parentPath()).data;
+        }
+
+        function validAuditEvent() {
+          let type = request.resource.data.type;
+          let after = parentLoadAfter();
+
+          return (
+              type == 'assigned'
+              && !exists(parentPath())
+              && hasPermission('manageLoads')
+              && after.status == 'assigned'
+            )
+            || (
+              exists(parentPath())
+              && type in [
+                'accepted',
+                'arrived_at_pickup',
+                'in_transit',
+                'delivered'
+              ]
+              && parentLoad().status != after.status
+              && type == after.status
+            )
+            || (
+              exists(parentPath())
+              && type == 'issue_reported'
+              && after.needsAttention == true
+              && after.issueSummary is string
+              && (
+                parentLoad().needsAttention != true
+                || parentLoad().issueSummary != after.issueSummary
+              )
+            )
+            || (
+              exists(parentPath())
+              && type == 'issue_resolved'
+              && hasPermission('manageLoads')
+              && parentLoad().needsAttention == true
+              && after.needsAttention == false
+            );
+        }
+
+        allow read: if canReadLoad(parentLoad());
+        allow create: if canReadLoad(parentLoadAfter())
+          && validAuditEvent()
+          && parentLoadAfter().updatedAt == request.time
+          && request.resource.data.keys().hasOnly([
+            'type',
+            'status',
+            'actorUid',
+            'actorName',
+            'note',
+            'createdAt'
+          ])
+          && request.resource.data.actorUid == request.auth.uid
+          && request.resource.data.actorName
+            == get(userPath()).data.displayName
+          && request.resource.data.type is string
+          && request.resource.data.status is string
+          && request.resource.data.status == parentLoadAfter().status
+          && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+
+    match /loadFinancials/{loadId} {
+      allow read, create, update: if hasPermission('manageLoads');
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

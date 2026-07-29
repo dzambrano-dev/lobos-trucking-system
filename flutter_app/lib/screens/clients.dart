@@ -33,6 +33,7 @@ class _ClientsPageState extends State<ClientsPage> {
       "address": addressController.text,
       "createdAt": Timestamp.now(),
     });
+    if (!mounted) return;
 
     companyController.clear();
     contactController.clear();
@@ -82,12 +83,12 @@ class _ClientsPageState extends State<ClientsPage> {
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text("Edit Client"),
         content: buildForm(),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text("Cancel"),
           ),
           ElevatedButton(
@@ -102,8 +103,9 @@ class _ClientsPageState extends State<ClientsPage> {
                     "email": emailController.text,
                     "address": addressController.text,
                   });
+              if (!dialogContext.mounted) return;
 
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
             },
             child: const Text("Save"),
           ),
