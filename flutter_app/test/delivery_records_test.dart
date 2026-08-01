@@ -28,7 +28,10 @@ void main() {
 
     expect(load.hasDeliveryProof, isTrue);
     expect(load.signedByName, 'Receiving Customer');
-    expect(load.signedAt, signedAt);
+    expect(
+      load.signedAt?.millisecondsSinceEpoch,
+      signedAt.millisecondsSinceEpoch,
+    );
     expect(load.deliveryCapturedBy, 'driver-1');
   });
 
@@ -43,7 +46,10 @@ void main() {
 
     expect(proof.signaturePng, orderedEquals([137, 80, 78, 71]));
     expect(proof.signedByName, 'Receiving Customer');
-    expect(proof.signedAt, signedAt);
+    expect(
+      proof.signedAt.millisecondsSinceEpoch,
+      signedAt.millisecondsSinceEpoch,
+    );
     expect(proof.capturedBy, 'driver-1');
   });
 
