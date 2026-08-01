@@ -1,19 +1,23 @@
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 
 import '../models/app_user.dart';
+import '../models/delivery_proof.dart';
 import '../models/load_record.dart';
 import '../models/load_status.dart';
 
 class LoadRepository {
-  LoadRepository({FirebaseFirestore? firestore, FirebaseStorage? storage})
-    : _firestore = firestore ?? FirebaseFirestore.instance,
-      _storage = storage ?? FirebaseStorage.instance;
+  LoadRepository({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  static const customerSignatureProofId = 'customerSignature';
+
+  // A signature is mostly white space, so a 350 KiB ceiling is generous while
+  // still leaving plenty of room below Firestore's 1 MiB document limit.
+  static const maxSignatureBytes = 350 * 1024;
 
   final FirebaseFirestore _firestore;
-  final FirebaseStorage _storage;
 
   CollectionReference<Map<String, dynamic>> get _loads =>
       _firestore.collection('loads');
@@ -61,6 +65,7 @@ class LoadRepository {
       'status': LoadProgressStatus.assigned.value,
       'needsAttention': false,
       'createdBy': actor.uid,
+      'lastEventId': eventRef.id,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -96,8 +101,11 @@ class LoadRepository {
     final eventRef = loadRef.collection('events').doc();
     final batch = _firestore.batch();
 
+    // The load and its audit entry succeed or fail together. Keeping those
+    // writes in one batch prevents an unexplained status change in the log.
     batch.update(loadRef, {
       'status': next.value,
+      'lastEventId': eventRef.id,
       'updatedAt': FieldValue.serverTimestamp(),
     });
     batch.set(
@@ -117,6 +125,9 @@ class LoadRepository {
     if (trimmedNote.isEmpty) {
       throw ArgumentError('Describe the delay or problem.');
     }
+    if (trimmedNote.length > 1000) {
+      throw ArgumentError('Keep the report under 1,000 characters.');
+    }
 
     final loadRef = _loads.doc(load.id);
     final eventRef = loadRef.collection('events').doc();
@@ -125,6 +136,7 @@ class LoadRepository {
     batch.update(loadRef, {
       'needsAttention': true,
       'issueSummary': trimmedNote,
+      'lastEventId': eventRef.id,
       'updatedAt': FieldValue.serverTimestamp(),
     });
     batch.set(
@@ -151,6 +163,7 @@ class LoadRepository {
     batch.update(loadRef, {
       'needsAttention': false,
       'issueSummary': FieldValue.delete(),
+      'lastEventId': eventRef.id,
       'updatedAt': FieldValue.serverTimestamp(),
     });
     batch.set(
@@ -165,6 +178,7 @@ class LoadRepository {
     required LoadRecord load,
     required AppUser actor,
     required Uint8List signaturePng,
+    required String signedByName,
   }) async {
     if (!load.status.canTransitionTo(LoadProgressStatus.delivered)) {
       throw StateError('The load must be in transit before delivery.');
@@ -172,52 +186,66 @@ class LoadRepository {
     if (signaturePng.isEmpty) {
       throw ArgumentError('A customer signature is required.');
     }
+    if (signaturePng.lengthInBytes > maxSignatureBytes) {
+      throw ArgumentError('The signature image is too large. Clear and retry.');
+    }
+    final signer = signedByName.trim();
+    if (signer.isEmpty || signer.length > 120) {
+      throw ArgumentError('Enter the customer name shown with the signature.');
+    }
 
-    final fileName =
-        '${actor.uid}-${DateTime.now().microsecondsSinceEpoch}.png';
-    final signatureRef = _storage
-        .ref()
-        .child('load-signatures')
-        .child(load.id)
-        .child(fileName);
+    final loadRef = _loads.doc(load.id);
+    final proofRef = loadRef.collection('proofs').doc(customerSignatureProofId);
+    final eventRef = loadRef.collection('events').doc();
+    final batch = _firestore.batch();
 
-    await signatureRef.putData(
-      signaturePng,
-      SettableMetadata(
-        contentType: 'image/png',
-        customMetadata: {'loadId': load.id, 'capturedBy': actor.uid},
+    // The proof is intentionally a separate document. A normal load query now
+    // downloads only a few metadata fields, not every customer's PNG.
+    batch.set(proofRef, {
+      'signaturePng': Blob(signaturePng),
+      'contentType': 'image/png',
+      'byteLength': signaturePng.lengthInBytes,
+      'signedByName': signer,
+      'signedAt': FieldValue.serverTimestamp(),
+      'capturedBy': actor.uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    batch.update(loadRef, {
+      'status': LoadProgressStatus.delivered.value,
+      'delivery': {
+        'proofId': customerSignatureProofId,
+        'signedByName': signer,
+        'signedAt': FieldValue.serverTimestamp(),
+        'capturedBy': actor.uid,
+      },
+      'lastEventId': eventRef.id,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    batch.set(
+      eventRef,
+      _eventData(
+        actor: actor,
+        type: LoadProgressStatus.delivered.value,
+        status: LoadProgressStatus.delivered,
+        note: 'Delivery signed by $signer',
       ),
     );
 
-    try {
-      final loadRef = _loads.doc(load.id);
-      final eventRef = loadRef.collection('events').doc();
-      final batch = _firestore.batch();
+    await batch.commit();
+  }
 
-      batch.update(loadRef, {
-        'status': LoadProgressStatus.delivered.value,
-        'delivery': {
-          'signatureStoragePath': signatureRef.fullPath,
-          'signedAt': FieldValue.serverTimestamp(),
-          'capturedBy': actor.uid,
-        },
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      batch.set(
-        eventRef,
-        _eventData(
-          actor: actor,
-          type: LoadProgressStatus.delivered.value,
-          status: LoadProgressStatus.delivered,
-          note: 'Customer signature captured',
-        ),
-      );
+  Future<DeliveryProof> getDeliveryProof(String loadId) async {
+    final snapshot = await _loads
+        .doc(loadId)
+        .collection('proofs')
+        .doc(customerSignatureProofId)
+        .get();
+    final data = snapshot.data();
 
-      await batch.commit();
-    } catch (_) {
-      await signatureRef.delete().catchError((_) {});
-      rethrow;
+    if (!snapshot.exists || data == null) {
+      throw StateError('No customer signature was found for this load.');
     }
+    return DeliveryProof.fromFirestore(data);
   }
 
   List<LoadRecord> _recordsFromSnapshot(

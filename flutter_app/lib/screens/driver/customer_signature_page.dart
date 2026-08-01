@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:signature/signature.dart';
 
@@ -23,6 +25,7 @@ class CustomerSignaturePage extends StatefulWidget {
 
 class _CustomerSignaturePageState extends State<CustomerSignaturePage> {
   late final SignatureController _signatureController;
+  final _signerNameController = TextEditingController();
   bool _saving = false;
   String? _error;
 
@@ -37,6 +40,11 @@ class _CustomerSignaturePageState extends State<CustomerSignaturePage> {
   }
 
   Future<void> _completeDelivery() async {
+    final signerName = _signerNameController.text.trim();
+    if (signerName.isEmpty) {
+      setState(() => _error = 'Enter the name of the person signing.');
+      return;
+    }
     if (_signatureController.isEmpty) {
       setState(() => _error = 'The customer must sign before delivery.');
       return;
@@ -48,33 +56,49 @@ class _CustomerSignaturePageState extends State<CustomerSignaturePage> {
     });
 
     try {
-      final signature = await _signatureController.toPngBytes(
-        width: 1200,
-        height: 600,
-      );
-      if (signature == null || signature.isEmpty) {
-        throw StateError('The signature image could not be created.');
-      }
+      final signature = await _renderSmallSignature();
 
       await widget.repository.completeDelivery(
         load: widget.load,
         actor: widget.user,
         signaturePng: signature,
+        signedByName: signerName,
       );
 
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (error) {
+      debugPrint('Delivery could not be completed: $error');
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = 'Could not complete delivery: $error';
+        _error =
+            'The delivery could not be saved. Check the connection and '
+            'try again.';
       });
     }
   }
 
+  Future<Uint8List> _renderSmallSignature() async {
+    // Try a crisp size first, then a smaller canvas if a particularly complex
+    // signature crosses our Firestore safety limit.
+    for (final size in const [(800, 360), (600, 270)]) {
+      final bytes = await _signatureController.toPngBytes(
+        width: size.$1,
+        height: size.$2,
+      );
+      if (bytes == null) continue;
+      if (bytes.isNotEmpty &&
+          bytes.length <= LoadRepository.maxSignatureBytes) {
+        return bytes;
+      }
+    }
+    throw StateError('The signature is too large. Clear it and try again.');
+  }
+
   @override
   void dispose() {
+    _signerNameController.dispose();
     _signatureController.dispose();
     super.dispose();
   }
@@ -115,6 +139,19 @@ class _CustomerSignaturePageState extends State<CustomerSignaturePage> {
               ),
             ),
             const SizedBox(height: 18),
+            TextField(
+              controller: _signerNameController,
+              enabled: !_saving,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.done,
+              maxLength: 120,
+              decoration: const InputDecoration(
+                labelText: 'Customer name',
+                hintText: 'Name of the person receiving the delivery',
+                prefixIcon: Icon(Icons.person_outline_rounded),
+              ),
+            ),
+            const SizedBox(height: 8),
             Text(
               'Sign inside the box',
               style: Theme.of(context).textTheme.titleMedium,

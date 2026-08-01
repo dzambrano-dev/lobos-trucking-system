@@ -1,0 +1,6 @@
+# Copy this file to key.properties and point storeFile to a private keystore.
+# Never commit the real file or the keystore.
+storePassword=replace-me
+keyPassword=replace-me
+keyAlias=upload
+storeFile=/absolute/path/to/upload-keystore.jks

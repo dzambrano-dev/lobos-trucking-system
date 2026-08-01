@@ -5,6 +5,7 @@ import '../../models/app_user.dart';
 import '../../models/load_record.dart';
 import '../../models/load_status.dart';
 import '../../services/load_repository.dart';
+import '../../widgets/delivery_proof_dialog.dart';
 import '../../widgets/load_status_chip.dart';
 import 'customer_signature_page.dart';
 
@@ -26,6 +27,8 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
     if (next == null) return;
 
     if (next == LoadProgressStatus.delivered) {
+      // Delivery is the one step that needs its own screen because the
+      // customer's name and signature become an immutable business record.
       final completed = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (_) => CustomerSignaturePage(
@@ -46,7 +49,10 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
       await _loads.updateProgress(load: load, next: next, actor: widget.user);
       if (mounted) _showMessage('Updated to ${next.label}.');
     } catch (error) {
-      if (mounted) _showMessage('Could not update load: $error');
+      debugPrint('Load progress update failed: $error');
+      if (mounted) {
+        _showMessage('The update could not be saved. Please try again.');
+      }
     } finally {
       if (mounted) setState(() => _busyLoadId = null);
     }
@@ -63,6 +69,7 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
           autofocus: true,
           minLines: 3,
           maxLines: 6,
+          maxLength: 1000,
           textCapitalization: TextCapitalization.sentences,
           decoration: const InputDecoration(
             labelText: 'What happened?',
@@ -92,7 +99,10 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
       await _loads.reportIssue(load: load, actor: widget.user, note: note);
       if (mounted) _showMessage('Problem reported to the office.');
     } catch (error) {
-      if (mounted) _showMessage('Could not send report: $error');
+      debugPrint('Issue report failed: $error');
+      if (mounted) {
+        _showMessage('The report could not be sent. Please try again.');
+      }
     } finally {
       if (mounted) setState(() => _busyLoadId = null);
     }
@@ -102,6 +112,14 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _viewProof(LoadRecord load) {
+    return showDeliveryProofDialog(
+      context: context,
+      load: load,
+      repository: _loads,
+    );
   }
 
   @override
@@ -115,10 +133,10 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return _DriverStateMessage(
+            return const _DriverStateMessage(
               icon: Icons.cloud_off_rounded,
               title: 'Unable to load assignments',
-              message: snapshot.error.toString(),
+              message: 'Check the connection and try again.',
             );
           }
 
@@ -132,8 +150,8 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
           }
 
           final openLoads = loads.where((load) => !load.isClosed).toList();
-          final completedLoads = loads
-              .where((load) => load.isComplete)
+          final recentHistory = loads
+              .where((load) => load.isClosed)
               .take(10)
               .toList();
 
@@ -149,22 +167,28 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
                     busy: _busyLoadId == load.id,
                     onAdvance: () => _advance(load),
                     onReportIssue: () => _reportIssue(load),
+                    onViewProof: load.hasDeliveryProof
+                        ? () => _viewProof(load)
+                        : null,
                   ),
                 ),
               ],
-              if (completedLoads.isNotEmpty) ...[
+              if (recentHistory.isNotEmpty) ...[
                 const SizedBox(height: 18),
                 Text(
-                  'Recently delivered',
+                  'Recent history',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 10),
-                ...completedLoads.map(
+                ...recentHistory.map(
                   (load) => _DriverLoadCard(
                     load: load,
                     busy: false,
                     onAdvance: null,
                     onReportIssue: null,
+                    onViewProof: load.hasDeliveryProof
+                        ? () => _viewProof(load)
+                        : null,
                   ),
                 ),
               ],
@@ -182,12 +206,14 @@ class _DriverLoadCard extends StatelessWidget {
     required this.busy,
     required this.onAdvance,
     required this.onReportIssue,
+    required this.onViewProof,
   });
 
   final LoadRecord load;
   final bool busy;
   final VoidCallback? onAdvance;
   final VoidCallback? onReportIssue;
+  final VoidCallback? onViewProof;
 
   @override
   Widget build(BuildContext context) {
@@ -261,7 +287,9 @@ class _DriverLoadCard extends StatelessWidget {
                 ),
               ),
             ],
-            if (onAdvance != null || onReportIssue != null) ...[
+            if (onAdvance != null ||
+                onReportIssue != null ||
+                onViewProof != null) ...[
               const SizedBox(height: 16),
               if (onAdvance != null)
                 SizedBox(
@@ -289,6 +317,17 @@ class _DriverLoadCard extends StatelessWidget {
                     onPressed: busy ? null : onReportIssue,
                     icon: const Icon(Icons.warning_amber_rounded),
                     label: const Text('Report delay or problem'),
+                  ),
+                ),
+              ],
+              if (onViewProof != null) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: onViewProof,
+                    icon: const Icon(Icons.draw_rounded),
+                    label: const Text('View delivery proof'),
                   ),
                 ),
               ],

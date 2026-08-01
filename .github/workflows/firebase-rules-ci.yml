@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - "flutter_app/firestore.rules"
-      - "flutter_app/storage.rules"
       - "flutter_app/firebase.json"
       - "firebase_tests/**"
       - ".github/workflows/firebase-rules-ci.yml"
@@ -13,7 +12,6 @@ on:
       - main
     paths:
       - "flutter_app/firestore.rules"
-      - "flutter_app/storage.rules"
       - "flutter_app/firebase.json"
       - "firebase_tests/**"
       - ".github/workflows/firebase-rules-ci.yml"

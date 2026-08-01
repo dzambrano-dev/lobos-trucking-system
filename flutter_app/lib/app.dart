@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'screens/auth/auth_gate.dart';
@@ -83,12 +84,16 @@ class StartupErrorPage extends StatelessWidget {
                     'then reopen the app.',
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 16),
-                  SelectableText(
-                    error.toString(),
-                    style: Theme.of(context).textTheme.bodySmall,
-                    textAlign: TextAlign.center,
-                  ),
+                  // Full exception text is useful during development, but it
+                  // can reveal configuration details in a production build.
+                  if (kDebugMode) ...[
+                    const SizedBox(height: 16),
+                    SelectableText(
+                      error.toString(),
+                      style: Theme.of(context).textTheme.bodySmall,
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ],
               ),
             ),

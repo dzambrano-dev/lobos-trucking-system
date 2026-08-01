@@ -11,6 +11,9 @@ __pycache__/
 build/
 .flutter-plugins
 .flutter-plugins-dependencies
+key.properties
+*.jks
+*.keystore
 
 # Node / Firebase emulators
 node_modules/

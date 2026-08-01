@@ -1,50 +1,54 @@
 # Lobos Trucking Operations
 
-Private operations software for a small family trucking company. The production
-application is designed for office staff and drivers with limited technical
-experience.
+Private operations software for a small family trucking company. The interface
+is intentionally straightforward: office staff assign loads, drivers see only
+their own work, and every operational change leaves an audit event.
 
-## Current production milestone
+## Production foundation
 
-This branch establishes the secure delivery workflow:
+The secured workflow on this branch supports:
 
-1. An authorized team member creates a load and assigns a driver.
-2. The assigned driver accepts the load.
-3. The driver records arrival at pickup.
-4. The driver records pickup and transit.
-5. The driver can report a delay or problem without losing the current
-   progress state.
-6. The driver completes delivery only after capturing the customer's
-   signature.
+1. Individual employee sign-in with no public registration.
+2. Capability-based manager and driver access.
+3. Client creation and editing without destructive deletion.
+4. Load creation and assignment to an active driver.
+5. Driver progress through assigned, accepted, pickup, transit, and delivery.
+6. Delay/problem reports that alert office staff.
+7. Customer name and signature capture before delivery can be completed.
+8. Immutable, attributed audit events for every load mutation.
 
-Every change records the authenticated user and a server timestamp.
+Customer signatures do **not** use Firebase Storage. Each compressed PNG is
+stored as a size-limited Firestore `Blob` under the load's private `proofs`
+subcollection. This works on Firebase's Spark plan and avoids downloading every
+signature whenever the load list refreshes.
 
 ## Architecture
 
-- **Flutter:** installable web and mobile interface
-- **Firebase Authentication:** private, individual employee accounts
-- **Cloud Firestore:** synchronized loads, users, clients, and activity events
-- **Cloud Storage:** customer signature images
-- **Firebase Hosting:** production web deployment
-- **Firebase Security Rules:** capability and assignment-based authorization
+- **Flutter:** installable web/PWA and mobile codebase
+- **Firebase Authentication:** private employee accounts
+- **Cloud Firestore:** clients, loads, delivery proofs, and audit events
+- **Firebase App Check:** app/device attestation before enforcement
+- **Firebase Hosting:** initial production web deployment
+- **Security Rules:** server-side permissions, workflow validation, and
+  immutable proof enforcement
 
-The earlier FastAPI/SQLite proof of concept remains under `backend/` for
-historical reference. It is not part of the production runtime and should not
-be deployed.
+The FastAPI/SQLite code under `backend/` is an earlier learning prototype. It
+is not connected to the Flutter application and must not be deployed beside
+the Firebase runtime.
 
 ## Repository layout
 
 ```text
 flutter_app/        Production Flutter and Firebase application
-firebase_tests/     Firestore authorization tests
-backend/            Legacy proof of concept; not deployed
-.github/workflows/  Flutter and Firebase rules validation
+firebase_tests/     Firestore authorization and workflow tests
+docs/               Architecture, schema, and rollout notes
+backend/            Legacy learning prototype; not production runtime
+.github/workflows/  Formatting, analysis, build, and rules checks
 ```
 
 ## Security model
 
-Users receive explicit capabilities instead of relying on loosely defined job
-titles:
+Profiles receive explicit capabilities:
 
 - `manageUsers`
 - `manageClients`
@@ -52,19 +56,18 @@ titles:
 - `viewAllLoads`
 - `updateAssignedLoads`
 
-Drivers can read only loads assigned to their account. They cannot reassign a
-load, edit its client or route, skip progress states, clear an office alert, or
-mark a load delivered without a customer signature. Loads and activity events
-cannot be permanently deleted from client applications.
+Drivers can read only their assigned loads. They cannot reassign work, change
+routes, skip statuses, clear office alerts, or complete delivery without an
+atomic signature-and-audit batch. Completed proof and audit documents cannot
+be edited or deleted from a client application.
 
-See [`flutter_app/README.md`](flutter_app/README.md) for local setup,
-Firebase configuration, testing, and deployment instructions.
+## Start here
 
-## Roadmap
+- [Application setup](flutter_app/README.md)
+- [Architecture walkthrough](docs/ARCHITECTURE.md)
+- [Firestore schema](docs/FIRESTORE_SCHEMA.md)
+- [Production checklist](docs/PRODUCTION_CHECKLIST.md)
 
-- Secure load workflow and customer signatures
-- Search, filtering, reassignment, and archival
-- Invoice migration with immutable invoice numbers
-- PDF/CSV exports
-- Proof-of-delivery document support
-- Production backups, monitoring, and staff onboarding
+The secure delivery workflow is a production foundation, not a finished
+accounting suite. Invoice migration, exports, backup automation, and employee
+administration remain separate milestones.

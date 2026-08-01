@@ -26,7 +26,8 @@ class DefaultFirebaseOptions {
     }
   }
 
-  // ================= WEB =================
+  // These client identifiers are expected to ship with a Firebase app. Data
+  // access is protected by Security Rules, key restrictions, and App Check.
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyCUT8EOnO0vWZyjlu7faSBelLb0wrE_YU4',
     appId: '1:780175935349:web:5d58839ef9a294fb81753c',
@@ -34,10 +35,8 @@ class DefaultFirebaseOptions {
     projectId: 'lobos-trucking',
     authDomain: 'lobos-trucking.firebaseapp.com',
     storageBucket: 'lobos-trucking.firebasestorage.app',
-    measurementId: 'G-XXXXXXXXXX', // 🔥 optional but recommended
   );
 
-  // ================= ANDROID =================
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDIROdOfyqQqo2cshMBlqor01Dqdzeo5_4',
     appId: '1:780175935349:android:8001a81322db80e981753c',
@@ -46,17 +45,16 @@ class DefaultFirebaseOptions {
     storageBucket: 'lobos-trucking.firebasestorage.app',
   );
 
-  // ================= IOS =================
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyBiT9y07HL2I5hncFVjnq4a2JDdHrkpaM8',
     appId: '1:780175935349:ios:b928f09b5af2eab381753c',
     messagingSenderId: '780175935349',
     projectId: 'lobos-trucking',
     storageBucket: 'lobos-trucking.firebasestorage.app',
-    iosBundleId: 'com.example.flutterApp', // ⚠️ change later
+    // Replace this template ID and re-register the app together.
+    iosBundleId: 'com.example.flutterApp',
   );
 
-  // ================= MACOS =================
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyBiT9y07HL2I5hncFVjnq4a2JDdHrkpaM8',
     appId: '1:780175935349:ios:b928f09b5af2eab381753c',
@@ -66,7 +64,6 @@ class DefaultFirebaseOptions {
     iosBundleId: 'com.example.flutterApp',
   );
 
-  // ================= WINDOWS =================
   static const FirebaseOptions windows = FirebaseOptions(
     apiKey: 'AIzaSyCUT8EOnO0vWZyjlu7faSBelLb0wrE_YU4',
     appId: '1:780175935349:web:e07154ba893d39d581753c',

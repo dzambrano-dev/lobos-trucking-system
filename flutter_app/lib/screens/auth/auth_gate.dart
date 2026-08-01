@@ -29,9 +29,9 @@ class AuthGate extends StatelessWidget {
               return const _LoadingPage(message: 'Loading your access…');
             }
             if (profileSnapshot.hasError) {
-              return AccessPendingPage(
+              return const AccessPendingPage(
                 title: 'Unable to verify access',
-                message: profileSnapshot.error.toString(),
+                message: 'Check the connection and try signing in again.',
               );
             }
 

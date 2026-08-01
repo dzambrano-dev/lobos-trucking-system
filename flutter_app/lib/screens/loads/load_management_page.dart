@@ -1,11 +1,12 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/app_user.dart';
 import '../../models/load_record.dart';
+import '../../services/client_repository.dart';
 import '../../services/load_repository.dart';
 import '../../services/user_repository.dart';
+import '../../widgets/delivery_proof_dialog.dart';
 import '../../widgets/load_status_chip.dart';
 
 class LoadManagementPage extends StatefulWidget {
@@ -26,17 +27,9 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
 
     try {
       final drivers = await UserRepository().getActiveDrivers();
-      final clientSnapshot = await FirebaseFirestore.instance
-          .collection('clients')
-          .orderBy('name')
-          .get();
-      final clients = clientSnapshot.docs
-          .map(
-            (doc) => _ClientChoice(
-              id: doc.id,
-              name: doc.data()['name'] as String? ?? 'Unnamed client',
-            ),
-          )
+      final clientRecords = await ClientRepository().getClients();
+      final clients = clientRecords
+          .map((client) => _ClientChoice(id: client.id, name: client.name))
           .toList();
 
       if (!mounted) return;
@@ -60,7 +53,10 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
         ),
       );
     } catch (error) {
-      if (mounted) _showMessage('Could not prepare the form: $error');
+      debugPrint('Load form setup failed: $error');
+      if (mounted) {
+        _showMessage('The load form could not open. Please try again.');
+      }
     } finally {
       if (mounted) setState(() => _loadingCreateData = false);
     }
@@ -71,8 +67,19 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
       await _loads.resolveIssue(load: load, actor: widget.user);
       if (mounted) _showMessage('Issue marked resolved.');
     } catch (error) {
-      if (mounted) _showMessage('Could not resolve issue: $error');
+      debugPrint('Issue resolution failed: $error');
+      if (mounted) {
+        _showMessage('The issue could not be resolved. Please try again.');
+      }
     }
+  }
+
+  Future<void> _viewProof(LoadRecord load) {
+    return showDeliveryProofDialog(
+      context: context,
+      load: load,
+      repository: _loads,
+    );
   }
 
   void _showMessage(String message) {
@@ -104,10 +111,10 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return _StateMessage(
+            return const _StateMessage(
               icon: Icons.cloud_off_rounded,
               title: 'Unable to load deliveries',
-              message: snapshot.error.toString(),
+              message: 'Check the connection and try again.',
             );
           }
 
@@ -129,6 +136,9 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
                 load: load,
                 canManage: widget.user.permissions.manageLoads,
                 onResolveIssue: () => _resolveIssue(load),
+                onViewProof: load.hasDeliveryProof
+                    ? () => _viewProof(load)
+                    : null,
               );
             },
           );
@@ -143,11 +153,13 @@ class _ManagerLoadCard extends StatelessWidget {
     required this.load,
     required this.canManage,
     required this.onResolveIssue,
+    required this.onViewProof,
   });
 
   final LoadRecord load;
   final bool canManage;
   final VoidCallback onResolveIssue;
+  final VoidCallback? onViewProof;
 
   @override
   Widget build(BuildContext context) {
@@ -225,6 +237,18 @@ class _ManagerLoadCard extends StatelessWidget {
                       ),
                     ],
                   ],
+                ),
+              ),
+            ],
+            if (onViewProof != null) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: onViewProof,
+                icon: const Icon(Icons.draw_rounded),
+                label: Text(
+                  load.signedByName?.isNotEmpty == true
+                      ? 'View signature from ${load.signedByName}'
+                      : 'View delivery proof',
                 ),
               ),
             ],
@@ -309,10 +333,13 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
       );
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
+      debugPrint('Load creation failed: $error');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not create load: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('The load could not be created. Please try again.'),
+        ),
+      );
       setState(() => _saving = false);
     }
   }
@@ -378,6 +405,7 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
                     prefixIcon: Icon(Icons.trip_origin_rounded),
                   ),
                   validator: _required,
+                  maxLength: 300,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -387,6 +415,7 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
                     prefixIcon: Icon(Icons.location_on_outlined),
                   ),
                   validator: _required,
+                  maxLength: 300,
                 ),
                 const SizedBox(height: 12),
                 ListTile(

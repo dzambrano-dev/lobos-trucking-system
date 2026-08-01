@@ -15,5 +15,11 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "proofs",
+      "fieldPath": "signaturePng",
+      "indexes": []
+    }
+  ]
 }

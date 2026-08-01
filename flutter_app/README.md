@@ -5,7 +5,7 @@
 - Flutter stable
 - Firebase CLI
 - Java 21 for the Firebase Emulator Suite
-- A Firebase development project separate from production
+- Separate Firebase projects for development and production
 
 ## Local setup
 
@@ -14,9 +14,8 @@ flutter pub get
 flutter run -d chrome
 ```
 
-The application has no public registration screen. Enable the Email/Password
-provider in Firebase Authentication and create employees through the Firebase
-console or a future administrator workflow.
+The app has no registration screen. In Firebase Authentication, enable the
+Email/Password provider and create each employee account administratively.
 
 ## Bootstrap the first administrator
 
@@ -55,18 +54,34 @@ An ordinary driver should receive:
 }
 ```
 
-Do not share employee logins. Activity attribution and security depend on each
-person using an individual account.
+Do not share logins. The audit trail is useful only when each person uses their
+own account.
+
+## Firestore-only signatures
+
+Firebase Storage requires the Blaze plan. Lobos Trucking instead writes a
+small PNG as a Firestore `Blob` at:
+
+```text
+loads/{loadId}/proofs/customerSignature
+```
+
+The client and security rules both enforce a 350 KiB ceiling. The load document
+stores only the signer name, timestamp, and proof ID, so live load queries do
+not repeatedly download signature images. The signature is fetched on demand
+when a manager or assigned driver opens proof of delivery.
 
 ## Firebase resources
 
-Deploy database indexes and security rules before using real data:
+Deploy the database rules and indexes before using real data:
 
 ```bash
-firebase deploy --only firestore:rules,firestore:indexes,storage
+firebase deploy \
+  --project YOUR_PRODUCTION_PROJECT_ID \
+  --only firestore:rules,firestore:indexes
 ```
 
-Test Firebase rules from the repository root:
+Run the authorization tests from the repository root:
 
 ```bash
 cd firebase_tests
@@ -74,16 +89,13 @@ npm ci
 npm test
 ```
 
-The test command starts both the Firestore and Storage emulators, so both rule
-files must compile. Two cross-service Storage cases are skipped because the
-current rules test library cannot reliably seed Firestore data for
-`firestore.get()` calls from Storage rules. Verify signature upload and cleanup
-on a staging Firebase project before enabling production enforcement.
+The emulator suite verifies permissions, allowed status transitions, required
+audit events, proof size, and delivery-proof immutability.
 
 ## App Check
 
-Debug builds do not enable App Check unless requested. Configure the Firebase
-App Check providers in the console, then build production with:
+Debug builds leave App Check off unless requested. Configure the providers in
+the Firebase console, then build production with:
 
 ```bash
 flutter build web \
@@ -91,33 +103,32 @@ flutter build web \
   --dart-define=APP_CHECK_WEB_KEY=YOUR_RECAPTCHA_V3_SITE_KEY
 ```
 
-After validating production traffic, enable App Check enforcement for
-Firestore, Authentication, and Storage in the Firebase console.
+Monitor verified traffic first. Then enforce App Check for Authentication and
+Firestore so a configuration mistake does not lock out the whole family on
+launch day.
 
 ## Hosting
 
-Build and deploy the single-page web app:
+Build and deploy the installable web app:
 
 ```bash
 flutter build web \
   --dart-define=ENABLE_APP_CHECK=true \
   --dart-define=APP_CHECK_WEB_KEY=YOUR_RECAPTCHA_V3_SITE_KEY
-firebase deploy --only hosting
+firebase deploy \
+  --project YOUR_PRODUCTION_PROJECT_ID \
+  --only hosting
 ```
 
-Do not use GitHub Pages for the operational application. Firebase Hosting
-supports the application routes, Firebase configuration, and preview
-deployments cleanly.
+The repository intentionally has no default Firebase project alias, which
+makes an accidental deployment to the wrong environment less likely.
 
-## Required production configuration
+The web/PWA release is the simplest first production target: employees open
+one URL and can install it from their phone browser without app-store rollout.
 
-Before onboarding employees:
+## Before onboarding employees
 
-- Use separate Firebase projects for development and production.
-- Disable public account creation in the product interface.
-- Deploy and test Firestore and Storage rules.
-- Register App Check providers and enable enforcement.
-- Configure budget alerts.
-- Enable scheduled Firestore backups.
-- Verify restoration procedures.
-- Test on the phones and browsers the drivers actually use.
+Work through [the production checklist](../docs/PRODUCTION_CHECKLIST.md). In
+particular, verify the Firebase API-key restrictions, test App Check on the
+actual phones, choose a backup/export plan, and run a staging delivery from
+assignment through signature.

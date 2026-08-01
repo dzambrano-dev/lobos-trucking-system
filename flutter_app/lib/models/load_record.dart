@@ -16,7 +16,10 @@ class LoadRecord {
     required this.status,
     required this.needsAttention,
     required this.issueSummary,
-    required this.signatureStoragePath,
+    required this.deliveryProofId,
+    required this.signedByName,
+    required this.signedAt,
+    required this.deliveryCapturedBy,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -33,7 +36,10 @@ class LoadRecord {
   final LoadProgressStatus status;
   final bool needsAttention;
   final String? issueSummary;
-  final String? signatureStoragePath;
+  final String? deliveryProofId;
+  final String? signedByName;
+  final DateTime? signedAt;
+  final String? deliveryCapturedBy;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -53,12 +59,16 @@ class LoadRecord {
       status: LoadProgressStatus.fromValue(data['status'] as String?),
       needsAttention: data['needsAttention'] == true,
       issueSummary: data['issueSummary'] as String?,
-      signatureStoragePath: delivery?['signatureStoragePath'] as String?,
+      deliveryProofId: delivery?['proofId'] as String?,
+      signedByName: delivery?['signedByName'] as String?,
+      signedAt: _dateFrom(delivery?['signedAt']),
+      deliveryCapturedBy: delivery?['capturedBy'] as String?,
       createdAt: _dateFrom(data['createdAt']),
       updatedAt: _dateFrom(data['updatedAt']),
     );
   }
 
+  bool get hasDeliveryProof => deliveryProofId != null;
   bool get isComplete => status == LoadProgressStatus.delivered;
   bool get isClosed =>
       status == LoadProgressStatus.delivered ||
