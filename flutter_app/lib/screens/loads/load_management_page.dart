@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -52,6 +53,14 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
           repository: _loads,
         ),
       );
+    } on InvalidUserProfileException catch (error) {
+      debugPrint('Load form setup failed: $error');
+      if (mounted) {
+        _showMessage(
+          'Repair users/${error.uid}: ${error.reason} '
+          'The document ID must be the employee Authentication UID.',
+        );
+      }
     } catch (error) {
       debugPrint('Load form setup failed: $error');
       if (mounted) {
@@ -284,6 +293,7 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
   AppUser? _driver;
   DateTime _scheduledPickupAt = DateTime.now();
   bool _saving = false;
+  String? _saveError;
 
   Future<void> _pickSchedule() async {
     final date = await showDatePicker(
@@ -319,7 +329,10 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
       return;
     }
 
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
 
     try {
       await widget.repository.createLoad(
@@ -335,13 +348,21 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
     } catch (error) {
       debugPrint('Load creation failed: $error');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('The load could not be created. Please try again.'),
-        ),
-      );
-      setState(() => _saving = false);
+      setState(() {
+        _saving = false;
+        _saveError = _creationFailureMessage(error);
+      });
     }
+  }
+
+  String _creationFailureMessage(Object error) {
+    if (error is FirebaseException && error.code == 'permission-denied') {
+      return 'Firebase rejected this load. Verify users/${widget.actor.uid} '
+          'and users/${_driver!.uid} use the employees’ Authentication UIDs, '
+          'have valid permissions maps, and contain the exact display names '
+          'shown above.';
+    }
+    return 'The load could not be created. Check the connection and try again.';
   }
 
   @override
@@ -435,6 +456,39 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
                   trailing: const Icon(Icons.edit_calendar_rounded),
                   onTap: _pickSchedule,
                 ),
+                if (_saveError != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.errorContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.error_outline_rounded,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onErrorContainer,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _saveError!,
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onErrorContainer,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

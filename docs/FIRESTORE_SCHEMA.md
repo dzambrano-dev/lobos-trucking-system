@@ -2,6 +2,10 @@
 
 ## `users/{uid}`
 
+`uid` is the exact Firebase Authentication User UID, not a Firestore
+auto-generated ID or an email address. Profiles contain only these fields;
+passwords belong exclusively in Firebase Authentication.
+
 | Field | Type | Purpose |
 | --- | --- | --- |
 | `displayName` | string | Human-readable audit attribution |

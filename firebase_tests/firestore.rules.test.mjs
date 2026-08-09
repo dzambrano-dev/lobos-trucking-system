@@ -165,6 +165,34 @@ test('manager must create a load and its first audit event together', async () =
   await assertSucceeds(batch.commit());
 });
 
+test('manager cannot create a load with a malformed audit profile', async () => {
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users', managerId), {
+      email: 'manager@example.com',
+      active: true,
+      permissions: managerPermissions,
+    });
+  });
+
+  const database = testEnvironment
+    .authenticatedContext(managerId)
+    .firestore();
+  const batch = writeBatch(database);
+
+  batch.set(doc(database, 'loads', 'load-1'), {
+    ...loadData(),
+    lastEventId: 'event-1',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  batch.set(
+    doc(database, 'loads', 'load-1', 'events', 'event-1'),
+    eventData(managerId, 'assigned', 'assigned'),
+  );
+
+  await assertFails(batch.commit());
+});
+
 test('manager cannot assign a load to a missing driver profile', async () => {
   const database = testEnvironment
     .authenticatedContext(managerId)

@@ -29,6 +29,16 @@ class AuthGate extends StatelessWidget {
               return const _LoadingPage(message: 'Loading your access…');
             }
             if (profileSnapshot.hasError) {
+              final error = profileSnapshot.error;
+              if (error is InvalidUserProfileException) {
+                return AccessPendingPage(
+                  title: 'User profile needs repair',
+                  message:
+                      'Firestore document users/${error.uid} is incomplete: '
+                      '${error.reason}\n\nUse this exact Authentication UID as '
+                      'the document ID. Do not use an auto-generated ID.',
+                );
+              }
               return const AccessPendingPage(
                 title: 'Unable to verify access',
                 message: 'Check the connection and try signing in again.',
@@ -37,11 +47,13 @@ class AuthGate extends StatelessWidget {
 
             final profile = profileSnapshot.data;
             if (profile == null) {
-              return const AccessPendingPage(
+              return AccessPendingPage(
                 title: 'Account setup required',
                 message:
                     'Your login works, but an administrator still needs to '
-                    'create your Lobos Trucking user profile.',
+                    'create Firestore document users/${firebaseUser.uid}.\n\n'
+                    'Use this exact Authentication UID as the document ID. '
+                    'Do not use an auto-generated ID.',
               );
             }
             if (!profile.active) {

@@ -37,6 +37,16 @@ After creating the first Authentication account, create
 }
 ```
 
+The document ID must be copied from **Authentication → Users → User UID**. Do
+not click Firestore's automatic document-ID button, and do not use an email
+address as the document ID. Enter string values without surrounding quotation
+marks; the Firebase console adds its own visual quotes after saving.
+
+The profile must contain exactly the four top-level fields shown above and all
+five boolean permission fields. Never store a password in Firestore—Firebase
+Authentication owns passwords. If one was added there, delete that field and
+change the exposed password in Authentication.
+
 An ordinary driver should receive:
 
 ```json
@@ -56,6 +66,22 @@ An ordinary driver should receive:
 
 Do not share logins. The audit trail is useful only when each person uses their
 own account.
+
+### Profile and permission troubleshooting
+
+If the app shows an email instead of the expected display name, or Firestore
+returns `permission-denied` while creating a load:
+
+1. Sign out and copy the signed-in employee's UID from Firebase Authentication.
+2. Confirm there is exactly one matching document at `users/{that exact UID}`.
+3. Remove orphan documents created with automatic Firestore IDs.
+4. Confirm `displayName` has no typed quotation marks or leading/trailing spaces.
+5. Confirm every permission is a Firestore boolean, not the string `"true"`.
+6. Repeat the UID and profile checks for the driver selected on the load.
+7. Deploy `firestore:rules,firestore:indexes`, then sign in again.
+
+Changing a different `users` document cannot update the signed-in profile. The
+app listens only to the document whose ID equals the Authentication UID.
 
 ## Firestore-only signatures
 
