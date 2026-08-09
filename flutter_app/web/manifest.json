@@ -1,11 +1,11 @@
 {
-    "name": "flutter_app",
-    "short_name": "flutter_app",
+    "name": "Lobos Trucking Operations",
+    "short_name": "Lobos Trucking",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F5F7FA",
+    "theme_color": "#174A7E",
+    "description": "Private load and delivery operations for Lobos Trucking.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

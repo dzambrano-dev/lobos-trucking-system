@@ -18,8 +18,6 @@ class PaymentService {
   }
 
   List<Payment> getPaymentsByInvoice(String invoiceId) {
-    return payments
-        .where((payment) => payment.invoiceId == invoiceId)
-        .toList();
+    return payments.where((payment) => payment.invoiceId == invoiceId).toList();
   }
 }

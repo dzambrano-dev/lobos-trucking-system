@@ -54,6 +54,7 @@ class _JobsPageState extends State<JobsPage> {
     };
 
     await docRef.set(invoice);
+    if (!mounted) return;
 
     ScaffoldMessenger.of(
       context,
@@ -94,7 +95,7 @@ class _JobsPageState extends State<JobsPage> {
                         final clients = snapshot.data!.docs;
 
                         return DropdownButtonFormField<String>(
-                          value: selectedClientId,
+                          initialValue: selectedClientId,
                           hint: const Text("Select Client"),
                           items: clients.map((client) {
                             final data = client.data() as Map<String, dynamic>;
@@ -146,7 +147,7 @@ class _JobsPageState extends State<JobsPage> {
                     const SizedBox(height: 10),
 
                     DropdownButtonFormField<String>(
-                      value: status,
+                      initialValue: status,
                       items: const [
                         DropdownMenuItem(
                           value: "pending",
@@ -205,6 +206,7 @@ class _JobsPageState extends State<JobsPage> {
                     await FirebaseFirestore.instance
                         .collection('jobs')
                         .add(newJob.toMap());
+                    if (!context.mounted) return;
 
                     Navigator.pop(context);
                   },

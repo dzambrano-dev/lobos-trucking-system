@@ -18,9 +18,7 @@ class ExpenseService {
   }
 
   List<Expense> getExpensesByJob(String jobId) {
-    return expenses
-        .where((expense) => expense.jobId == jobId)
-        .toList();
+    return expenses.where((expense) => expense.jobId == jobId).toList();
   }
 
   List<Expense> getExpensesByCategory(String category) {
