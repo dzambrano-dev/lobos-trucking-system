@@ -470,9 +470,7 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
                       children: [
                         Icon(
                           Icons.error_outline_rounded,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onErrorContainer,
+                          color: Theme.of(context).colorScheme.onErrorContainer,
                         ),
                         const SizedBox(width: 10),
                         Expanded(
