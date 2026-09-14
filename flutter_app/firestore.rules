@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function staff() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.active == true;
+    }
+    function positive(value) {
+      return value is number && value > 0 && value <= 999999999 &&
+        math.abs(value * 100 - math.round(value * 100)) < 0.00001;
+    }
+    function paid(data) {
+      return data.get('amountPaid', data.get('status', 'pending') == 'paid' ? data.amount : 0);
+    }
+    function near(a, b) { return a - b < 0.000001 && b - a < 0.000001; }
+    match /staff/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list, write: if false;
+    }
+    match /settings/company {
+      allow read: if staff();
+      allow create, update: if staff() && request.resource.data.name is string && request.resource.data.name.size() > 0 &&
+        request.resource.data.address is string && request.resource.data.address.size() > 0;
+      allow delete: if false;
+    }
+    match /clients/{id} {
+      allow read: if staff();
+      allow create, update: if staff() && request.resource.data.name is string && request.resource.data.name.size() > 0;
+      allow delete: if false;
+    }
+    match /jobs/{id} {
+      function validJob() {
+        let d = request.resource.data;
+        return d.clientId is string && d.pickup is string && d.pickup.size() > 0 &&
+          d.dropoff is string && d.dropoff.size() > 0 && positive(d.price) &&
+          d.status in ['pending', 'in progress', 'completed', 'cancelled'] &&
+          get(/databases/$(database)/documents/clients/$(d.clientId)).data.get('archived', false) == false;
+      }
+      allow read: if staff();
+      allow create: if staff() && validJob() && !('invoiceId' in request.resource.data);
+      allow update: if staff() && (
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['archived', 'updatedAt']) && request.resource.data.archived is bool) ||
+        (!('invoiceId' in resource.data) && (
+          (!('invoiceId' in request.resource.data) && validJob()) ||
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['invoiceId']) &&
+            getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.jobId == id)
+        ))
+      );
+      allow delete: if false;
+    }
+    match /invoices/{id} {
+      allow read: if staff();
+      allow create: if staff() && request.resource.data.jobId == id &&
+        get(/databases/$(database)/documents/jobs/$(id)).data.status == 'completed' &&
+        get(/databases/$(database)/documents/jobs/$(id)).data.get('archived', false) == false &&
+        !('invoiceId' in get(/databases/$(database)/documents/jobs/$(id)).data) &&
+        getAfter(/databases/$(database)/documents/jobs/$(id)).data.invoiceId == id &&
+        positive(request.resource.data.amount) &&
+        near(request.resource.data.amount, get(/databases/$(database)/documents/jobs/$(id)).data.price) &&
+        request.resource.data.amountPaid == 0 && request.resource.data.status == 'pending';
+      allow update: if staff() && (
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dueDate', 'notes', 'updatedAt']) &&
+          request.resource.data.dueDate is timestamp && request.resource.data.notes is string) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amountPaid', 'status', 'lastPaymentId', 'updatedAt']) &&
+          request.resource.data.amountPaid > paid(resource.data) &&
+          request.resource.data.amountPaid <= resource.data.amount &&
+          request.resource.data.status == (near(request.resource.data.amountPaid, resource.data.amount) ? 'paid' : 'partial') &&
+          !exists(/databases/$(database)/documents/payments/$(request.resource.data.lastPaymentId)) &&
+          getAfter(/databases/$(database)/documents/payments/$(request.resource.data.lastPaymentId)).data.invoiceId == id &&
+          near(getAfter(/databases/$(database)/documents/payments/$(request.resource.data.lastPaymentId)).data.amount,
+            request.resource.data.amountPaid - paid(resource.data))) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amountPaid', 'status', 'lastReversalId', 'updatedAt']) &&
+          request.resource.data.amountPaid >= 0 && request.resource.data.amountPaid < paid(resource.data) &&
+          request.resource.data.status == (near(request.resource.data.amountPaid, 0) ? 'pending' : 'partial') &&
+          !exists(/databases/$(database)/documents/payment_reversals/$(request.resource.data.lastReversalId)) &&
+          getAfter(/databases/$(database)/documents/payment_reversals/$(request.resource.data.lastReversalId)).data.invoiceId == id &&
+          near(getAfter(/databases/$(database)/documents/payment_reversals/$(request.resource.data.lastReversalId)).data.amount,
+            paid(resource.data) - request.resource.data.amountPaid))
+      );
+      allow delete: if false;
+    }
+    match /payments/{id} {
+      allow read: if staff();
+      allow create: if staff() && positive(request.resource.data.amount) &&
+        request.resource.data.reference is string && request.resource.data.reference.size() > 0 &&
+        getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.lastPaymentId == id &&
+        near(getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.amountPaid,
+          paid(get(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data) + request.resource.data.amount);
+      allow update, delete: if false;
+    }
+    match /expenses/{id} {
+      allow read: if staff();
+      allow create, update: if staff() && positive(request.resource.data.amount) &&
+        request.resource.data.category in ['Fuel', 'Maintenance', 'Tolls', 'Insurance', 'Driver pay', 'Other'] &&
+        request.resource.data.expenseDate is timestamp;
+      allow delete: if false;
+    }
+    match /payment_reversals/{id} {
+      allow read: if staff();
+      allow create: if staff() && request.resource.data.paymentId == id &&
+        request.resource.data.reason is string && request.resource.data.reason.size() > 0 &&
+        get(/databases/$(database)/documents/payments/$(id)).data.invoiceId == request.resource.data.invoiceId &&
+        request.resource.data.amount == get(/databases/$(database)/documents/payments/$(id)).data.amount &&
+        getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.lastReversalId == id &&
+        near(paid(get(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data) - request.resource.data.amount,
+          getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.amountPaid);
+      allow update, delete: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

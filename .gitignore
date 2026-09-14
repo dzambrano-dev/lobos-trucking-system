@@ -17,3 +17,7 @@ build/
 
 # OS
 .DS_Store
+# Local verification dependencies and emulator logs
+node_modules/
+*-debug.log
+.firebase/

@@ -1,45 +1,70 @@
-# Lobos Trucking Database (CLI)
+# Lobos Trucking
 
-This project is a lightweight command-line database application designed to manage clients, jobs, and invoices for a small trucking operation. It uses SQLite for data storage and Python for a simple administrative interface.
+A Flutter and Firebase workspace for a small trucking company's office: dispatch, customer contacts, billing, payments, and operating expenses. The older Python/SQLite CLI remains in `backend/` as a separate prototype; it does not share data with the Flutter app.
 
-The goal of this project is to demonstrate core systems concepts such as relational database design, data integrity, and safe database interaction through a CLI-based workflow.
+## Daily workflow
 
----
+1. **Clients:** add company and contact information. Search, edit, archive, or restore customers without deleting their history.
+2. **Dispatch:** add pickup/delivery locations, scheduled date, driver, truck, load reference, agreed rate, and notes. Edit a job as it moves from Scheduled to In progress to Completed.
+3. **Invoices:** create an invoice from a completed job. The app links one invoice to each job and freezes the billed job. New invoices default to net 30; due dates and notes remain editable.
+4. **Payments:** record a received amount and payment reference. Partial payments reduce the balance; excess payments are rejected. Correct an incorrectly recorded payment with **Reverse entry**, which retains the original receipt and correction reason. This corrects bookkeeping only and does not send a refund. Print or save an invoice as PDF.
+5. **Expenses:** record fuel, maintenance, tolls, insurance, driver pay, and other costs, optionally linked to a job.
+6. **Overview:** see active work, jobs ready to bill, overdue invoices, all-time collected payments, outstanding balances, and active expense totals.
 
-## Features
+Amounts are USD, entered to two decimal places. Collected is based on invoice paid balances, including legacy invoices marked paid; it is not a profit or tax report. Dates use the device's local calendar. Archived expenses are excluded from the overview expense total. Archive erroneous expense entries only when that exclusion is intended.
 
-- Relational database schema with enforced foreign keys
-- Separation of schema definition and sample data
-- Command-line interface for basic administrative tasks
-- Parameterized SQL queries to prevent SQL injection
-- Clear distinction between read and write operations
+## Run locally
 
----
+Use Flutter 3.44.8 / Dart 3.12.2 (the version used for verification), or a compatible newer stable SDK.
 
-## Database Design
+```sh
+cd flutter_app
+flutter pub get
+flutter run -d chrome
+```
 
-The database consists of three related tables:
+The default entry point is the real Firebase workspace and requires an enabled staff account. To review all screens without credentials or touching company data:
 
-- **clients**: stores client contact information
-- **jobs**: tracks work performed for each client
-- **invoices**: records billing and payment status for completed jobs
+```sh
+flutter run -d chrome -t tool/preview.dart
+```
 
-Relationships are enforced using foreign keys to ensure referential integrity. Business rules such as one invoice per job and valid job statuses are handled at the database level.
+The preview uses fictional, in-memory records. Changes disappear on reload. It is a development-only entry point: use debug mode, not release, with the fake Firestore package.
 
----
+## Configure access before deploying
 
-## File Structure
-  app.py # Command-line interface and application logic
-  schema.sql # Database schema and table definitions
-  sample_data.sql # Fictional demo data for testing
-  README.md
+1. In the existing `lobos-trucking` Firebase project, enable **Authentication → Email/Password**. Create each office user's account there. Do not put passwords or service-account keys in the repository.
+2. For each user's Firebase Authentication UID, create a Firestore document `staff/{uid}` with `active: true` using the Firebase console. This list is administrator-managed; users cannot enable themselves. Set `active: false` to revoke access. All enabled staff share office-level access; there is no restricted driver role in this version.
+3. Back up existing Firestore data, then run the legacy audit and rollout steps in [RELEASE.md](RELEASE.md).
+4. Deploy the included rules with an authorized Firebase administrator account:
 
----
+   ```sh
+   cd flutter_app
+   npx firebase deploy --only firestore:rules --project lobos-trucking
+   ```
 
-## How to Run
+5. Build the production app with `flutter build web`. Publish `flutter_app/build/web` through your existing hosting provider, and add its domain to Firebase Authentication's authorized domains. The default build excludes the demo entry point.
+6. Enter real business and remittance details under the gear icon before printing invoices. Verify sign-in, client/job editing, invoice creation, partial payment/reversal, and PDF printing with a designated test record before daily use. Android, iOS, macOS, and Windows packaging still require platform-specific deployment verification. The checked-in Firebase configuration must correspond to the platform/application you deploy.
 
-1. Ensure Python 3 is installed.
-2. From the project directory, run:
+Rules and app changes should be rolled out together. The old unsigned app will lose access when the staff-only rules are deployed. Existing hosted app configuration and live Firebase data were not changed by this implementation.
 
-```bash
-python app.py
+## Existing data
+
+The app reads existing `clients`, `jobs`, and `invoices` collections and accepts Firestore timestamps or ISO date strings. Records missing `createdAt` remain visible. Existing invoices with `status: paid` and no `amountPaid` retain a zero balance.
+
+Legacy invoices used random document IDs. Choosing **Create invoice** for an already billed job resolves its existing invoice and stores the link instead of issuing another. Before production, inspect invoices grouped by `jobId`: resolve any pre-existing duplicates and missing-job references with the owner, and populate each uniquely billed job's `invoiceId`. Do not delete accounting records to resolve an ambiguity. This migration is needed so the rules can lock all legacy billed jobs, including writes from other clients. The app itself also checks for legacy invoices before editing a job.
+
+Invoice totals, job references, and original payment entries cannot be edited or deleted through the app. Corrections append a reversal record and restore the outstanding balance. Refund transactions, credit notes, sales tax, multi-currency, and bank reconciliation are not implemented. This is an operations and receivables tracker, not a full accounting package.
+
+## Verification
+
+```sh
+cd flutter_app
+flutter analyze
+flutter test
+flutter build web
+npm ci
+npm run test:rules
+```
+
+The rule tests use only the local Firestore emulator and the `demo-lobos` project; they require Java 21+ and Node.js 20+. Tests cover staff authorization, transactional invoice linking, billed-job locks, immutable payment history, partial payments, duplicate retries, overpayment rejection, legacy balances, responsive navigation, and client editing.
