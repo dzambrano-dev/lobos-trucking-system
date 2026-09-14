@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import '../services/operations.dart';
 import 'records.dart';
 import 'company_settings.dart';
+import '../models/app_user.dart';
+import 'loads/load_management_page.dart';
 
 class Dashboard extends StatefulWidget {
-  const Dashboard({super.key, this.store, this.onSignOut});
+  const Dashboard({super.key, this.store, this.onSignOut, this.user});
+  final AppUser? user;
   final Operations? store;
   final VoidCallback? onSignOut;
   @override
@@ -16,7 +19,7 @@ class _DashboardState extends State<Dashboard> {
   int selected = 0;
   static const labels = [
     'Overview',
-    'Dispatch',
+    'Billing jobs',
     'Clients',
     'Invoices',
     'Expenses',
@@ -47,6 +50,16 @@ class _DashboardState extends State<Dashboard> {
           ],
         ),
         actions: [
+          if (widget.user != null)
+            IconButton(
+              tooltip: 'Driver dispatch',
+              icon: const Icon(Icons.route),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => LoadManagementPage(user: widget.user!),
+                ),
+              ),
+            ),
           IconButton(
             tooltip: 'Company & invoice details',
             onPressed: () => openCompanySettings(context, store),
@@ -79,9 +92,33 @@ class _DashboardState extends State<Dashboard> {
           if (wide) const VerticalDivider(width: 1),
           Expanded(
             child: selected == 0
-                ? Overview(
-                    store: store,
-                    navigate: (i) => setState(() => selected = i),
+                ? Column(
+                    children: [
+                      if (widget.user != null)
+                        Card(
+                          margin: const EdgeInsets.all(16),
+                          child: ListTile(
+                            leading: const Icon(Icons.route),
+                            title: const Text('Driver dispatch'),
+                            subtitle: const Text(
+                              'Assign loads, review progress and delivery signatures',
+                            ),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    LoadManagementPage(user: widget.user!),
+                              ),
+                            ),
+                          ),
+                        ),
+                      Expanded(
+                        child: Overview(
+                          store: store,
+                          navigate: (i) => setState(() => selected = i),
+                        ),
+                      ),
+                    ],
                   )
                 : RecordsPage(
                     key: ValueKey(selected),

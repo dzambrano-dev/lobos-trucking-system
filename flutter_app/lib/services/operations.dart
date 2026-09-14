@@ -146,6 +146,51 @@ class Operations {
     });
   }
 
+  Future<String> billDeliveredLoad(String loadId, double amount) async {
+    if (!amount.isFinite ||
+        amount <= 0 ||
+        amount > 999999999 ||
+        (amount * 100 - (amount * 100).round()).abs() > 0.00001) {
+      throw StateError('Enter a positive amount with up to two decimals.');
+    }
+    final jobId = 'load_$loadId';
+    final ref = db.collection('jobs').doc(jobId);
+    await db.runTransaction((tx) async {
+      final load = await tx.get(db.collection('loads').doc(loadId));
+      final existing = await tx.get(ref);
+      if (!load.exists || load.data()?['status'] != 'delivered') {
+        throw StateError('The driver must complete delivery before billing.');
+      }
+      if (existing.exists) {
+        if (existing.data()?['loadId'] != loadId) {
+          throw StateError('Billing reference conflict.');
+        }
+        return;
+      }
+      final data = load.data()!;
+      final client = await tx.get(
+        db.collection('clients').doc(data['clientId'] as String),
+      );
+      if (!client.exists || client.data()?['archived'] == true) {
+        throw StateError('Restore the client before billing.');
+      }
+      tx.set(ref, {
+        'loadId': loadId,
+        'clientId': data['clientId'],
+        'clientName': data['clientName'],
+        'pickup': data['pickupAddress'],
+        'dropoff': data['deliveryAddress'],
+        'driver': data['assignedDriverName'],
+        'reference': data['loadNumber'],
+        'price': amount,
+        'status': 'completed',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+    return invoiceJob(jobId);
+  }
+
   Future<String> invoiceJob(String jobId) async {
     // Legacy invoices used random IDs. Resolve those before creating the
     // deterministic per-job invoice used by the new transaction protocol.

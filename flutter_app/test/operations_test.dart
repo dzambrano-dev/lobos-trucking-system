@@ -19,6 +19,39 @@ void main() {
       'status': 'completed',
     });
   });
+  test(
+    'delivered load billing retries keep one invoice and original charge',
+    () async {
+      await db.collection('loads').doc('delivery').set({
+        'status': 'in_transit',
+      });
+      await expectLater(
+        store.billDeliveredLoad('delivery', 250.25),
+        throwsStateError,
+      );
+      await db.collection('loads').doc('delivery').set({
+        'status': 'delivered',
+        'clientId': 'client',
+        'clientName': 'Acme',
+        'pickupAddress': 'Yard',
+        'deliveryAddress': 'Site',
+        'assignedDriverName': 'Driver',
+        'loadNumber': 'LD-1',
+      });
+      final first = await store.billDeliveredLoad('delivery', 250.25);
+      expect(await store.billDeliveredLoad('delivery', 999), first);
+      expect((await db.collection('invoices').get()).docs, hasLength(1));
+      expect(
+        (await db.collection('invoices').doc(first).get()).data()!['amount'],
+        250.25,
+      );
+      expect(
+        (await db.collection('jobs').doc('load_delivery').get())
+            .data()!['loadId'],
+        'delivery',
+      );
+    },
+  );
   test('invoice is idempotent and locks the source job', () async {
     final first = await store.invoiceJob('job');
     expect(await store.invoiceJob('job'), first);

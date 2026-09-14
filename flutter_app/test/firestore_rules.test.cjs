@@ -13,7 +13,7 @@ beforeEach(async () => {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async context => {
     const db = context.firestore();
-    await setDoc(doc(db, 'staff/office'), { active: true });
+    await setDoc(doc(db, 'users/office'), { active: true, displayName: 'Office', email: 'office@example.com', permissions: {manageUsers:true,manageClients:true,manageLoads:true,viewAllLoads:true,updateAssignedLoads:true} });
     await setDoc(doc(db, 'clients/client'), { name: 'Acme' });
     await setDoc(doc(db, 'jobs/job'), { clientId: 'client', clientName: 'Acme', pickup: 'Yard', dropoff: 'Site', price: 100.30, status: 'completed' });
   });

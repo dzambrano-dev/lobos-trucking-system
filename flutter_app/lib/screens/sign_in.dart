@@ -1,7 +1,9 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'dashboard.dart';
+import '../models/app_user.dart';
+import '../services/user_repository.dart';
+import 'driver/driver_loads_page.dart';
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
@@ -14,21 +16,35 @@ class AuthGate extends StatelessWidget {
       }
       if (!snapshot.hasData) return const SignInPage();
       final user = snapshot.data!;
-      return StreamBuilder(
-        stream: FirebaseFirestore.instance
-            .collection('staff')
-            .doc(user.uid)
-            .snapshots(),
+      return StreamBuilder<AppUser?>(
+        stream: UserRepository().watchUser(user.uid),
         builder: (context, member) {
           if (member.connectionState == ConnectionState.waiting) {
             return const Scaffold(
               body: Center(child: CircularProgressIndicator()),
             );
           }
-          if (member.data?.data()?['active'] == true) {
-            return Dashboard(
-              key: ValueKey(user.uid),
-              onSignOut: () => FirebaseAuth.instance.signOut(),
+          final profile = member.data;
+          if (!member.hasError &&
+              profile != null &&
+              profile.active &&
+              profile.isAdmin) {
+            return _session(
+              profile,
+              Dashboard(
+                key: ValueKey(user.uid),
+                user: profile,
+                onSignOut: () => FirebaseAuth.instance.signOut(),
+              ),
+            );
+          }
+          if (!member.hasError &&
+              profile != null &&
+              profile.active &&
+              profile.permissions.updateAssignedLoads) {
+            return _session(
+              profile,
+              DriverLoadsPage(key: ValueKey(user.uid), user: profile),
             );
           }
           return Scaffold(
@@ -61,6 +77,11 @@ class AuthGate extends StatelessWidget {
     },
   );
 }
+
+Widget _session(AppUser user, Widget home) => Navigator(
+  key: ValueKey('${user.uid}:${user.permissions.toMap()}'),
+  onGenerateRoute: (_) => MaterialPageRoute<void>(builder: (_) => home),
+);
 
 class SignInPage extends StatefulWidget {
   const SignInPage({super.key});

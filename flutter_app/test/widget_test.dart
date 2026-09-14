@@ -19,7 +19,7 @@ void main() {
       expect(find.text('Keep the day moving.'), findsOneWidget);
       expect(tester.takeException(), isNull);
       for (final page in [
-        'Dispatch',
+        'Billing jobs',
         'Clients',
         'Invoices',
         'Expenses',

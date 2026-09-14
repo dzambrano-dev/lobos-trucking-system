@@ -1,6 +1,6 @@
 # Lobos Trucking
 
-A Flutter and Firebase workspace for a small trucking company's office: dispatch, customer contacts, billing, payments, and operating expenses. The older Python/SQLite CLI remains in `backend/` as a separate prototype; it does not share data with the Flutter app.
+A Flutter and Firebase workspace for a small trucking company: dispatch, customer contacts, billing, payments, and operating expenses. The older Python/SQLite CLI remains in `backend/` as a separate prototype; it does not share data with the Flutter app.
 
 ## Daily workflow
 
@@ -34,7 +34,7 @@ The preview uses fictional, in-memory records. Changes disappear on reload. It i
 ## Configure access before deploying
 
 1. In the existing `lobos-trucking` Firebase project, enable **Authentication → Email/Password**. Create each office user's account there. Do not put passwords or service-account keys in the repository.
-2. For each user's Firebase Authentication UID, create a Firestore document `staff/{uid}` with `active: true` using the Firebase console. This list is administrator-managed; users cannot enable themselves. Set `active: false` to revoke access. All enabled staff share office-level access; there is no restricted driver role in this version.
+2. Each Authentication UID needs a `users/{uid}` document with `displayName`, `email`, `active: true`, and a `permissions` map containing five booleans: `manageUsers`, `manageClients`, `manageLoads`, `viewAllLoads`, `updateAssignedLoads`. Admins have all five enabled. Drivers have only `updateAssignedLoads` enabled. Set `active: false` to revoke application access. Existing profiles on the driver foundation branch remain compatible.
 3. Back up existing Firestore data, then run the legacy audit and rollout steps in [RELEASE.md](RELEASE.md).
 4. Deploy the included rules with an authorized Firebase administrator account:
 
@@ -68,3 +68,11 @@ npm run test:rules
 ```
 
 The rule tests use only the local Firestore emulator and the `demo-lobos` project; they require Java 21+ and Node.js 20+. Tests cover staff authorization, transactional invoice linking, billed-job locks, immutable payment history, partial payments, duplicate retries, overpayment rejection, legacy balances, responsive navigation, and client editing.
+
+## Driver and admin workflow
+
+One sign-in page routes employees automatically from their saved profile. Admins use **Driver dispatch** on the overview to assign loads and review progress. Problems appear first. Drivers see only **My deliveries**, progress through each step, report delays, and obtain a customer name and signature before completing delivery.
+
+For a delivered load, admins choose **Create / view invoice** and enter the agreed charge. Billing creates one stable job and invoice per load, reopens that invoice on retries, and retains the original charge. **Billing jobs** also supports standalone office jobs. Driver accounts cannot read jobs, invoices, payments, expenses, or company settings. User profiles, not the legacy staff collection, are the authorization source.
+
+Deploy the supplied Firestore indexes as well as rules and hosting. Accounts and passwords are managed in Firebase Authentication; permission profiles are managed by the owner in Firestore. Disable the profile to revoke ongoing data access.
