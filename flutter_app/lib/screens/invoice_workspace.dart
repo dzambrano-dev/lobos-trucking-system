@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pdf/widgets.dart' as pw;
+import '../services/invoice_pdf.dart';
 import 'package:printing/printing.dart';
 import '../services/operations.dart';
 import '../widgets/record_editor.dart';
@@ -64,13 +64,14 @@ class _InvoiceWorkspaceState extends State<InvoiceWorkspace> {
     );
   }
 
-  Future<void> printInvoice(Record invoice) async {
+  Future<void> printInvoice(Record invoice, {bool download = false}) async {
     setState(() => printing = true);
     try {
       final company =
           (await widget.store.db.collection('settings').doc('company').get())
               .data();
       if (company == null ||
+          (company['name'] ?? '').toString().trim().isEmpty ||
           (company['address'] ?? '').toString().trim().isEmpty) {
         throw StateError(
           'Set your business name and remittance address using Company & invoice details before printing.',
@@ -88,64 +89,54 @@ class _InvoiceWorkspaceState extends State<InvoiceWorkspace> {
         pickup = job.data()?['pickup']?.toString();
         dropoff = job.data()?['dropoff']?.toString();
       }
-      final pdf = pw.Document();
-      pdf.addPage(
-        pw.MultiPage(
-          build: (_) => [
-            pw.Text(
-              company['name'].toString(),
-              style: pw.TextStyle(fontSize: 26, fontWeight: pw.FontWeight.bold),
-            ),
-            pw.SizedBox(height: 8),
-            pw.Text(company['address'].toString()),
-            pw.Text(
-              [
-                company['phone'],
-                company['email'],
-              ].where((v) => v != null && v.toString().isNotEmpty).join(' | '),
-            ),
-            pw.Text('INVOICE ${invoice['invoiceNumber'] ?? widget.id}'),
-            pw.Text(
-              'Issued: ${shortDate(invoice['createdAt'])}    Due: ${shortDate(invoice['dueDate'])}',
-            ),
-            pw.SizedBox(height: 24),
-            pw.Text('Bill to: ${invoice['client'] ?? ''}'),
-            if ((invoice['clientAddress'] ?? '').toString().isNotEmpty)
-              pw.Text(invoice['clientAddress'].toString()),
-            if ((invoice['clientEmail'] ?? '').toString().isNotEmpty)
-              pw.Text(invoice['clientEmail'].toString()),
-            pw.SizedBox(height: 16),
-            pw.Divider(),
-            pw.Text(
-              'Hauling services: ${pickup ?? 'Route unavailable'} to ${dropoff ?? ''}',
-            ),
-            pw.SizedBox(height: 20),
-            pw.Text('Invoice total: ${money(invoice['amount'])}'),
-            pw.Text('Payments received: ${money(paidAmount(invoice))}'),
-            pw.Text(
-              'Balance due: ${money(balanceOf(invoice))}',
-              style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
-            ),
-            pw.SizedBox(height: 16),
-            pw.Text('Status: ${invoiceStatus(invoice).toUpperCase()}'),
-            if ((invoice['notes'] ?? '').toString().isNotEmpty)
-              pw.Text('Notes: ${invoice['notes']}'),
-            pw.SizedBox(height: 32),
-            if ((company['paymentInstructions'] ?? '').toString().isNotEmpty)
-              pw.Text(company['paymentInstructions'].toString()),
-            pw.Text('Thank you for your business.'),
-          ],
-        ),
+      final bytes = await buildInvoicePdf(
+        company: company,
+        invoice: invoice,
+        invoiceId: widget.id,
+        pickup: pickup,
+        dropoff: dropoff,
       );
-      await Printing.layoutPdf(
-        name: '${invoice['invoiceNumber'] ?? 'invoice'}.pdf',
-        onLayout: (_) => pdf.save(),
+      final baseName = '${invoice['invoiceNumber'] ?? 'invoice'}'.replaceAll(
+        RegExp(r'[^a-zA-Z0-9_-]'),
+        '_',
       );
+      final filename = '$baseName.pdf';
+      if (download) {
+        final saved = await Printing.sharePdf(bytes: bytes, filename: filename);
+        if (!saved) {
+          throw StateError('The PDF could not be saved. Please try again.');
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'PDF download requested. Check your browser downloads.',
+              ),
+            ),
+          );
+        }
+      } else {
+        await Printing.layoutPdf(
+          name: filename,
+          onLayout: (_) async => bytes,
+        ).timeout(
+          const Duration(seconds: 20),
+          onTimeout: () => throw StateError(
+            'The print dialog did not respond. Use Download PDF, then open the file to print.',
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Could not print invoice: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e is StateError
+                  ? e.message.toString()
+                  : 'Unable to prepare the PDF. Check your connection and try again.',
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => printing = false);
@@ -229,11 +220,18 @@ class _InvoiceWorkspaceState extends State<InvoiceWorkspace> {
                             OutlinedButton.icon(
                               onPressed: printing
                                   ? null
+                                  : () => printInvoice(data, download: true),
+                              icon: const Icon(Icons.download_outlined),
+                              label: Text(
+                                printing ? 'Preparing…' : 'Download PDF',
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: printing
+                                  ? null
                                   : () => printInvoice(data),
                               icon: const Icon(Icons.print_outlined),
-                              label: Text(
-                                printing ? 'Preparing…' : 'Print / save PDF',
-                              ),
+                              label: Text(printing ? 'Preparing…' : 'Print'),
                             ),
                             TextButton(
                               onPressed: () => editRecord(
