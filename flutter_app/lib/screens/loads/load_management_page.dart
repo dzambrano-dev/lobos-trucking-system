@@ -6,6 +6,7 @@ import '../../models/app_user.dart';
 import '../../services/operations.dart';
 import '../invoice_workspace.dart';
 import '../../models/load_record.dart';
+import '../../models/dispatch_queue.dart';
 import '../../services/client_repository.dart';
 import '../../services/load_repository.dart';
 import '../../services/user_repository.dart';
@@ -13,20 +14,32 @@ import '../../widgets/delivery_proof_dialog.dart';
 import '../../widgets/load_status_chip.dart';
 
 class LoadManagementPage extends StatefulWidget {
-  const LoadManagementPage({super.key, required this.user});
+  const LoadManagementPage({
+    super.key,
+    required this.user,
+    this.store,
+    this.embedded = false,
+  });
 
   final AppUser user;
+  final Operations? store;
+  final bool embedded;
 
   @override
   State<LoadManagementPage> createState() => _LoadManagementPageState();
 }
 
 class _LoadManagementPageState extends State<LoadManagementPage> {
-  final _loads = LoadRepository();
+  late final store = widget.store ?? Operations();
+  late final _loads = LoadRepository(firestore: store.db);
+  late final loadStream = _loads.watchAllLoads();
+  late final jobStream = store.watch('jobs');
+  bool billing = false;
   bool _loadingCreateData = false;
 
   Future<void> _bill(LoadRecord load) async {
-    final store = Operations();
+    if (billing) return;
+    setState(() => billing = true);
     try {
       final existing = await store.db
           .collection('jobs')
@@ -35,7 +48,7 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
       double amount = number(existing.data()?['price']);
       if (!existing.exists) {
         if (!mounted) return;
-        final controller = TextEditingController();
+        var charge = '';
         final form = GlobalKey<FormState>();
         final result = await showDialog<double>(
           context: context,
@@ -44,7 +57,7 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
             content: Form(
               key: form,
               child: TextFormField(
-                controller: controller,
+                onChanged: (value) => charge = value,
                 autofocus: true,
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
@@ -72,7 +85,7 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
               FilledButton(
                 onPressed: () {
                   if (form.currentState!.validate()) {
-                    Navigator.pop(context, double.parse(controller.text));
+                    Navigator.pop(context, double.parse(charge));
                   }
                 },
                 child: const Text('Create invoice'),
@@ -80,7 +93,6 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
             ],
           ),
         );
-        controller.dispose();
         if (result == null) return;
         amount = result;
       }
@@ -93,6 +105,8 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
       );
     } catch (error) {
       if (mounted) _showMessage('Invoice could not be opened: $error');
+    } finally {
+      if (mounted) setState(() => billing = false);
     }
   }
 
@@ -173,7 +187,10 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Load management')),
+      appBar: AppBar(
+        automaticallyImplyLeading: !widget.embedded,
+        title: const Text('Dispatch'),
+      ),
       floatingActionButton: widget.user.permissions.manageLoads
           ? FloatingActionButton.extended(
               onPressed: _loadingCreateData ? null : _openCreateLoad,
@@ -186,55 +203,109 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
               label: const Text('New load'),
             )
           : null,
-      body: StreamBuilder<List<LoadRecord>>(
-        stream: _loads.watchAllLoads(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return const _StateMessage(
-              icon: Icons.cloud_off_rounded,
-              title: 'Unable to load deliveries',
-              message: 'Check the connection and try again.',
-            );
-          }
+      body: StreamBuilder<List<Record>>(
+        stream: jobStream,
+        builder: (context, jobs) {
+          final billed = {
+            for (final job in jobs.data ?? <Record>[])
+              if (job['loadId'] != null && job['invoiceId'] != null)
+                job['loadId'].toString(),
+          };
+          final billingReady = jobs.hasData && !jobs.hasError;
+          return StreamBuilder<List<LoadRecord>>(
+            stream: loadStream,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return const _StateMessage(
+                  icon: Icons.cloud_off_rounded,
+                  title: 'Unable to load deliveries',
+                  message: 'Check the connection and try again.',
+                );
+              }
 
-          final loads = [...snapshot.data ?? <LoadRecord>[]]
-            ..sort((a, b) {
-              final attention =
-                  (b.needsAttention ? 1 : 0) - (a.needsAttention ? 1 : 0);
-              if (attention != 0) return attention;
-              final closed = (a.isClosed ? 1 : 0) - (b.isClosed ? 1 : 0);
-              return closed != 0
-                  ? closed
-                  : (b.updatedAt ?? DateTime(1970)).compareTo(
-                      a.updatedAt ?? DateTime(1970),
-                    );
-            });
-          if (loads.isEmpty) {
-            return const _StateMessage(
-              icon: Icons.inventory_2_outlined,
-              title: 'No loads yet',
-              message: 'Create and assign the first load.',
-            );
-          }
+              final now = DateTime.now();
+              final loads = [...snapshot.data ?? <LoadRecord>[]]
+                ..sort((a, b) {
+                  final group = dispatchGroup(
+                    a,
+                    billed,
+                    now,
+                  ).compareTo(dispatchGroup(b, billed, now));
+                  if (group != 0) return group;
+                  final byDate = (a.scheduledPickupAt ?? DateTime(2100))
+                      .compareTo(b.scheduledPickupAt ?? DateTime(2100));
+                  return byDate != 0 ? byDate : a.id.compareTo(b.id);
+                });
+              if (loads.isEmpty) {
+                return const _StateMessage(
+                  icon: Icons.inventory_2_outlined,
+                  title: 'No loads yet',
+                  message: 'Create and assign the first load.',
+                );
+              }
 
-          return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-            itemCount: loads.length,
-            itemBuilder: (context, index) {
-              final load = loads[index];
-              return _ManagerLoadCard(
-                load: load,
-                canManage: widget.user.permissions.manageLoads,
-                onResolveIssue: () => _resolveIssue(load),
-                onBill: widget.user.isAdmin && load.isComplete
-                    ? () => _bill(load)
-                    : null,
-                onViewProof: load.hasDeliveryProof
-                    ? () => _viewProof(load)
-                    : null,
+              return Column(
+                children: [
+                  if (!billingReady)
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        jobs.hasError
+                            ? 'Billing status is unavailable. Refresh before invoicing.'
+                            : 'Checking invoice status...',
+                      ),
+                    ),
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                      itemCount: loads.length,
+                      itemBuilder: (context, index) {
+                        final load = loads[index];
+                        final group = dispatchGroup(load, billed, now);
+                        final first =
+                            index == 0 ||
+                            dispatchGroup(loads[index - 1], billed, now) !=
+                                group;
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (first)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                child: Text(
+                                  dispatchGroupLabels[group],
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
+                              ),
+                            _ManagerLoadCard(
+                              load: load,
+                              canManage: widget.user.permissions.manageLoads,
+                              onResolveIssue: () => _resolveIssue(load),
+                              invoiceExists: billed.contains(load.id),
+                              onBill:
+                                  billingReady &&
+                                      !billing &&
+                                      widget.user.isAdmin &&
+                                      load.isComplete
+                                  ? () => _bill(load)
+                                  : null,
+                              onViewProof: load.hasDeliveryProof
+                                  ? () => _viewProof(load)
+                                  : null,
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
               );
             },
           );
@@ -251,6 +322,7 @@ class _ManagerLoadCard extends StatelessWidget {
     required this.onResolveIssue,
     required this.onViewProof,
     required this.onBill,
+    required this.invoiceExists,
   });
 
   final LoadRecord load;
@@ -258,6 +330,7 @@ class _ManagerLoadCard extends StatelessWidget {
   final VoidCallback onResolveIssue;
   final VoidCallback? onViewProof;
   final VoidCallback? onBill;
+  final bool invoiceExists;
 
   @override
   Widget build(BuildContext context) {
@@ -342,7 +415,7 @@ class _ManagerLoadCard extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: onBill,
                 icon: const Icon(Icons.receipt_long),
-                label: const Text('Create / view invoice'),
+                label: Text(invoiceExists ? 'View invoice' : 'Create invoice'),
               ),
             if (onViewProof != null) ...[
               const SizedBox(height: 12),

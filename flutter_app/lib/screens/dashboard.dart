@@ -16,10 +16,10 @@ class Dashboard extends StatefulWidget {
 
 class _DashboardState extends State<Dashboard> {
   late final store = widget.store ?? Operations();
-  int selected = 0;
+  late int selected = widget.user == null ? 0 : 1;
   static const labels = [
     'Overview',
-    'Billing jobs',
+    'Dispatch',
     'Clients',
     'Invoices',
     'Expenses',
@@ -31,6 +31,14 @@ class _DashboardState extends State<Dashboard> {
     Icons.receipt_long_outlined,
     Icons.account_balance_wallet_outlined,
   ];
+  void openBillingJobs() => Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => Scaffold(
+        appBar: AppBar(title: const Text('Standalone billing jobs')),
+        body: RecordsPage(collection: 'jobs', store: store),
+      ),
+    ),
+  );
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 900;
@@ -50,16 +58,6 @@ class _DashboardState extends State<Dashboard> {
           ],
         ),
         actions: [
-          if (widget.user != null)
-            IconButton(
-              tooltip: 'Driver dispatch',
-              icon: const Icon(Icons.route),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => LoadManagementPage(user: widget.user!),
-                ),
-              ),
-            ),
           IconButton(
             tooltip: 'Company & invoice details',
             onPressed: () => openCompanySettings(context, store),
@@ -92,43 +90,46 @@ class _DashboardState extends State<Dashboard> {
           if (wide) const VerticalDivider(width: 1),
           Expanded(
             child: selected == 0
-                ? Column(
+                ? Overview(
+                    store: store,
+                    navigate: (i) {
+                      if (i == 1) {
+                        openBillingJobs();
+                      } else {
+                        setState(() => selected = i);
+                      }
+                    },
+                  )
+                : selected == 1 && widget.user != null
+                ? LoadManagementPage(
+                    user: widget.user!,
+                    store: store,
+                    embedded: true,
+                  )
+                : Column(
                     children: [
-                      if (widget.user != null)
-                        Card(
-                          margin: const EdgeInsets.all(16),
-                          child: ListTile(
-                            leading: const Icon(Icons.route),
-                            title: const Text('Driver dispatch'),
-                            subtitle: const Text(
-                              'Assign loads, review progress and delivery signatures',
-                            ),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    LoadManagementPage(user: widget.user!),
-                              ),
-                            ),
+                      if (selected == 3)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.work_outline),
+                            label: const Text('Standalone billing jobs'),
+                            onPressed: openBillingJobs,
                           ),
                         ),
                       Expanded(
-                        child: Overview(
+                        child: RecordsPage(
+                          key: ValueKey(selected),
+                          collection: [
+                            'jobs',
+                            'clients',
+                            'invoices',
+                            'expenses',
+                          ][selected - 1],
                           store: store,
-                          navigate: (i) => setState(() => selected = i),
                         ),
                       ),
                     ],
-                  )
-                : RecordsPage(
-                    key: ValueKey(selected),
-                    collection: [
-                      'jobs',
-                      'clients',
-                      'invoices',
-                      'expenses',
-                    ][selected - 1],
-                    store: store,
                   ),
           ),
         ],

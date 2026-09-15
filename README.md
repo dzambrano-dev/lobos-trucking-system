@@ -71,8 +71,10 @@ The rule tests use only the local Firestore emulator and the `demo-lobos` projec
 
 ## Driver and admin workflow
 
-One sign-in page routes employees automatically from their saved profile. Admins use **Driver dispatch** on the overview to assign loads and review progress. Problems appear first. Drivers see only **My deliveries**, progress through each step, report delays, and obtain a customer name and signature before completing delivery.
+One sign-in page routes employees automatically from their saved profile. Admins land on **Dispatch** to assign loads and review progress. The work list groups attention items (including overdue pickups), today's work, deliveries ready to invoice, upcoming loads, and history. Drivers see only **My deliveries**, progress through each step, report delays, and obtain a customer name and signature before completing delivery.
 
-For a delivered load, admins choose **Create / view invoice** and enter the agreed charge. Billing creates one stable job and invoice per load, reopens that invoice on retries, and retains the original charge. **Billing jobs** also supports standalone office jobs. Driver accounts cannot read jobs, invoices, payments, expenses, or company settings. User profiles, not the legacy staff collection, are the authorization source.
+For a delivered load, admins choose **Create / view invoice** and enter the agreed charge. Billing creates one stable job and invoice per load, reopens that invoice on retries, and retains the original charge. Standalone office jobs remain available through **Invoices → Standalone billing jobs**. Driver accounts cannot read jobs, invoices, payments, expenses, or company settings. User profiles, not the legacy staff collection, are the authorization source.
 
 Deploy the supplied Firestore indexes as well as rules and hosting. Accounts and passwords are managed in Firebase Authentication; permission profiles are managed by the owner in Firestore. Disable the profile to revoke ongoing data access.
+
+The dispatch invoice button reads **Create invoice** until the delivery is billed, then **View invoice**. Financial transaction and driver access rules are unchanged by this navigation update.
