@@ -102,7 +102,10 @@ class _DashboardState extends State<Dashboard> {
                     },
                   )
                 : selected == 4
-                ? ExpenseAccountsPage(store: store)
+                ? ExpenseAccountsPage(
+                    store: store,
+                    onOpenInvoices: () => setState(() => selected = 3),
+                  )
                 : selected == 1 && widget.user != null
                 ? LoadManagementPage(
                     user: widget.user!,

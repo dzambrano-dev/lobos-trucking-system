@@ -341,7 +341,9 @@ class _DriverLoadCard extends StatelessWidget {
                                 ? Icons.draw_rounded
                                 : Icons.arrow_forward_rounded,
                           ),
-                    label: Text(load.status.nextActionLabel!),
+                    label: Text(
+                      busy ? 'Saving update...' : load.status.nextActionLabel!,
+                    ),
                   ),
                 ),
               if (onReportIssue != null) ...[

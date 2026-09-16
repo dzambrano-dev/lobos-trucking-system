@@ -31,6 +31,15 @@ void main() {
         250,
         scrollable: find.byType(Scrollable).first,
       );
+      for (
+        var attempt = 0;
+        attempt < 8 &&
+            find.text('Record payment').hitTestable().evaluate().isEmpty;
+        attempt++
+      ) {
+        await tester.drag(find.byType(ListView).first, const Offset(0, -200));
+        await tester.pumpAndSettle();
+      }
       await tester.tap(find.text('Record payment'));
       await tester.pumpAndSettle();
       await tester.enterText(

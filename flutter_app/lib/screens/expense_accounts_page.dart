@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import '../services/operations.dart';
 import '../services/expense_accounts.dart';
+import '../services/monthly_exports.dart';
+import '../services/download.dart';
 import '../widgets/record_editor.dart';
 
 class ExpenseAccountsPage extends StatefulWidget {
-  const ExpenseAccountsPage({super.key, required this.store});
+  const ExpenseAccountsPage({
+    super.key,
+    required this.store,
+    this.onOpenInvoices,
+  });
   final Operations store;
+  final VoidCallback? onOpenInvoices;
   @override
   State<ExpenseAccountsPage> createState() => _ExpenseAccountsPageState();
 }
@@ -225,6 +232,19 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
 
   Widget content(Map<String, List<Record>> data) {
     final summary = expenseSummary(data, month);
+    final now = DateTime.now();
+    final cutoff = DateTime(now.year, now.month, now.day + 8);
+    bool dueSoon(Record bill) {
+      final due = dateOf(bill['dueDate']);
+      return expenseStatus(bill) != 'Paid' &&
+          due != null &&
+          due.isBefore(cutoff);
+    }
+
+    final dueCount = data['expenses']!.where(dueSoon).length;
+    final overdueInvoices = data['invoices']!
+        .where((i) => invoiceStatus(i, now) == 'overdue')
+        .length;
     final bills = data['expenses']!.where((b) {
       final status = expenseStatus(b), date = dateOf(b['expenseDate']);
       final period = filter == 'All'
@@ -233,6 +253,7 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
       final matches =
           filter == 'All' ||
           filter == status ||
+          (filter == 'Due soon' && dueSoon(b)) ||
           (filter == 'Unpaid' && status == 'Partially paid');
       return period &&
           matches &&
@@ -256,6 +277,59 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
               onPressed: () => edit(),
               icon: const Icon(Icons.add),
               label: const Text('Add expense'),
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'Export selected month as CSV',
+              onSelected: (report) {
+                try {
+                  final period = reportDate(month).substring(0, 7);
+                  downloadCsv(
+                    'lobos-$period-$report.csv',
+                    monthlyExports(data, month)[report]!,
+                  );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'CSV download requested. Check your browser downloads.',
+                      ),
+                    ),
+                  );
+                } catch (_) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Unable to download. Open the web app and try again.',
+                      ),
+                    ),
+                  );
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'summary', child: Text('Monthly summary')),
+                PopupMenuItem(
+                  value: 'expenses',
+                  child: Text('Expenses and unpaid bills'),
+                ),
+                PopupMenuItem(
+                  value: 'invoices',
+                  child: Text('Invoices and balances'),
+                ),
+                PopupMenuItem(
+                  value: 'payments',
+                  child: Text('Payment activity'),
+                ),
+              ],
+              child: const Padding(
+                padding: EdgeInsets.all(12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.download),
+                    SizedBox(width: 8),
+                    Text('Export CSV'),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -319,6 +393,26 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
             '${summary['review']} older expense(s) need payment review. Amount owed and cash out are incomplete until reviewed.',
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
+        if (dueCount > 0 || overdueInvoices > 0)
+          Wrap(
+            spacing: 8,
+            children: [
+              if (dueCount > 0)
+                TextButton.icon(
+                  onPressed: () => setState(() {
+                    filter = 'Due soon';
+                  }),
+                  icon: const Icon(Icons.schedule),
+                  label: Text('$dueCount bills overdue / due within 7 days'),
+                ),
+              if (overdueInvoices > 0 && widget.onOpenInvoices != null)
+                TextButton.icon(
+                  onPressed: widget.onOpenInvoices,
+                  icon: const Icon(Icons.receipt_long),
+                  label: Text('$overdueInvoices overdue invoices'),
+                ),
+            ],
+          ),
         TextField(
           decoration: const InputDecoration(
             labelText: 'Search vendor, category, truck or notes',
@@ -329,7 +423,13 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
         Wrap(
           spacing: 8,
           children: [
-            for (final value in ['All', 'Unpaid', 'Paid', 'Needs review'])
+            for (final value in [
+              'All',
+              'Unpaid',
+              'Due soon',
+              'Paid',
+              'Needs review',
+            ])
               ChoiceChip(
                 label: Text(value),
                 selected: filter == value,

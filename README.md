@@ -86,3 +86,25 @@ Assigned loads expose **Reschedule pickup**. Open loads expose **Cancel load** w
 Admins can enter vendor bills as unpaid or paid in full, record partial payments with dates and references, and reverse mistaken payment entries while retaining history. Balances cannot be increased or reduced without matching payment records. Older expenses show Needs review until their known payments are recorded or they are confirmed unpaid.
 
 The month selector shows incurred expenses, net expense payments, customer receipts, net cash flow, and an operating profit estimate (invoiced revenue less recorded expenses). Outstanding bills span all dates. Cash figures depend on individually recorded payments; legacy paid invoices may lack these records. These operational estimates exclude taxes, depreciation, and missing costs.
+
+### Reports and free-plan backups
+
+In Expenses, choose a month and **Export CSV**. Summary and payment activity apply to that month; bill and invoice exports also include outstanding records from other months with an explicit Scope column. Outstanding amounts reflect current balances, not a historical month-end balance. Payment activity retains reversed rows with zero included cash. Files use USD, UTF-8 and spreadsheet formula protection.
+
+The Due soon filter includes unpaid/review-needed bills overdue or due within the next seven days. The overdue-invoice shortcut opens Invoices. These are in-app reminders, not scheduled notifications.
+
+The project remains on the free Firebase plan. Scheduled cloud backups and receipt file uploads are not enabled. To make a manual Firestore backup, sign into the Firebase CLI, then run from `flutter_app`:
+
+```sh
+node tool/backup_firestore.cjs /absolute/path/to/a-new-private-backup-directory
+```
+
+The tool captures Firestore documents (including nested collections and signature data) at a common server read time, plus deployed rules. It refuses to overwrite a backup. It does not back up Firebase Authentication credentials, Hosting assets or external files. Keep a protected copy on a separate device or secure backup location; a file on the development computer is not an automatic disaster-recovery service. Backup data must never be committed to GitHub.
+
+To verify the document data without touching production:
+
+```sh
+npx firebase emulators:exec --only firestore --project demo-lobos "node tool/verify_backup_restore.cjs /absolute/path/to/backup/firestore.json"
+```
+
+The verifier only accepts a loopback emulator, writes to `demo-lobos`, and compares every restored document field. A production recovery requires a separate, deliberate recovery procedure including Authentication and app deployment.
