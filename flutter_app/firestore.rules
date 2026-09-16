@@ -705,12 +705,59 @@ service cloud.firestore {
           paid(get(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data) + request.resource.data.amount);
       allow update, delete: if false;
     }
+    function expensePaid(d) { return d.get('amountPaid', 0); }
     match /expenses/{id} {
+      function validBill() {
+        let d = request.resource.data;
+        return positive(d.amount) && d.category in ['Fuel','Maintenance','Tolls','Insurance','Driver pay','Other'] &&
+          d.expenseDate is timestamp && expensePaid(d) >= 0 && expensePaid(d) <= d.amount;
+      }
+      function linkedPayment(beforePaid) {
+        let d = request.resource.data;
+        let p = /databases/$(database)/documents/expense_payments/$(d.lastPaymentId);
+        return !exists(p) && getAfter(p).data.expenseId == id &&
+          near(getAfter(p).data.amount, expensePaid(d) - beforePaid);
+      }
       allow read: if staff();
-      allow create, update: if staff() && positive(request.resource.data.amount) &&
-        request.resource.data.category in ['Fuel', 'Maintenance', 'Tolls', 'Insurance', 'Driver pay', 'Other'] &&
-        request.resource.data.expenseDate is timestamp;
+      allow create: if staff() && validBill() && request.resource.data.paymentReviewed == true &&
+        (expensePaid(request.resource.data) == 0 || linkedPayment(0));
+      allow update: if staff() && validBill() && (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['category','vendor','amount','expenseDate','dueDate','truck','jobId','notes','updatedAt','archived']) ||
+        (!resource.data.get('paymentReviewed',false) && request.resource.data.paymentReviewed == true &&
+          expensePaid(request.resource.data) == 0 && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentReviewed','amountPaid','updatedAt'])) ||
+        (request.resource.data.paymentReviewed == true && expensePaid(request.resource.data) > expensePaid(resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amountPaid','paymentReviewed','lastPaymentId','updatedAt']) && linkedPayment(expensePaid(resource.data))) ||
+        (expensePaid(request.resource.data) < expensePaid(resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amountPaid','lastReversalId','updatedAt']) &&
+          !exists(/databases/$(database)/documents/expense_reversals/$(request.resource.data.lastReversalId)) &&
+          getAfter(/databases/$(database)/documents/expense_reversals/$(request.resource.data.lastReversalId)).data.expenseId == id &&
+          near(getAfter(/databases/$(database)/documents/expense_reversals/$(request.resource.data.lastReversalId)).data.amount,expensePaid(resource.data)-expensePaid(request.resource.data)))
+      );
       allow delete: if false;
+    }
+    match /expense_payments/{id} {
+      function previous() {
+        let p = /databases/$(database)/documents/expenses/$(request.resource.data.expenseId);
+        return exists(p) ? expensePaid(get(p).data) : 0;
+      }
+      allow read: if staff();
+      allow create: if staff() && positive(request.resource.data.amount) && request.resource.data.paidAt is timestamp &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.reference is string && request.resource.data.reference.size() > 0 &&
+        getAfter(/databases/$(database)/documents/expenses/$(request.resource.data.expenseId)).data.lastPaymentId == id &&
+        near(expensePaid(getAfter(/databases/$(database)/documents/expenses/$(request.resource.data.expenseId)).data),previous()+request.resource.data.amount);
+      allow update, delete: if false;
+    }
+    match /expense_reversals/{id} {
+      allow read: if staff();
+      allow create: if staff() && request.resource.data.paymentId == id && request.resource.data.reason is string &&
+        request.resource.data.reason.size() > 0 && request.resource.data.createdAt == request.time &&
+        get(/databases/$(database)/documents/expense_payments/$(id)).data.expenseId == request.resource.data.expenseId &&
+        get(/databases/$(database)/documents/expense_payments/$(id)).data.amount == request.resource.data.amount &&
+        getAfter(/databases/$(database)/documents/expenses/$(request.resource.data.expenseId)).data.lastReversalId == id &&
+        near(expensePaid(get(/databases/$(database)/documents/expenses/$(request.resource.data.expenseId)).data)-request.resource.data.amount,
+          expensePaid(getAfter(/databases/$(database)/documents/expenses/$(request.resource.data.expenseId)).data));
+      allow update, delete: if false;
     }
     match /payment_reversals/{id} {
       allow read: if staff();

@@ -80,3 +80,45 @@ test('sub-cent amounts are denied, payment reversal must be atomic and immutable
   await assertFails(updateDoc(doc(db, 'payment_reversals/p1'), { reason: 'Rewritten' }));
   await assertFails(deleteDoc(doc(db, 'payment_reversals/p1')));
 });
+const { writeBatch, serverTimestamp } = require('firebase/firestore');
+const billData = (amountPaid = 0) => ({amount:500,category:'Fuel',vendor:'Station',expenseDate:Timestamp.now(),amountPaid,paymentReviewed:true});
+async function expensePayment(db, id, amount, balance) {
+  const batch=writeBatch(db);
+  batch.set(doc(db, `expense_payments/${id}`),{expenseId:'bill',amount,paidAt:Timestamp.now(),reference:'Check',createdAt:serverTimestamp()});
+  batch.update(doc(db,'expenses/bill'),{amountPaid:balance,paymentReviewed:true,lastPaymentId:id});
+  return batch.commit();
+}
+test('expense balances require atomic receipts, reject overpayment and preserve history', async () => {
+  const db=env.authenticatedContext('office').firestore();
+  await assertFails(setDoc(doc(db,'expenses/bill'),billData(50)));
+  await assertSucceeds(setDoc(doc(db,'expenses/bill'),billData()));
+  await assertFails(updateDoc(doc(db,'expenses/bill'),{amountPaid:200}));
+  await assertSucceeds(expensePayment(db,'partial',200,200));
+  await assertFails(expensePayment(db,'excess',301,501));
+  await assertFails(updateDoc(doc(db,'expenses/bill'),{amount:100}));
+  await assertFails(updateDoc(doc(db,'expense_payments/partial'),{amount:10}));
+  await assertFails(deleteDoc(doc(db,'expense_payments/partial')));
+  const reversal={expenseId:'bill',paymentId:'partial',amount:200,reason:'Correction',createdAt:serverTimestamp()};
+  await assertFails(setDoc(doc(db,'expense_reversals/partial'),reversal));
+  const batch=writeBatch(db);
+  batch.set(doc(db,'expense_reversals/partial'),reversal);
+  batch.update(doc(db,'expenses/bill'),{amountPaid:0,lastReversalId:'partial'});
+  await assertSucceeds(batch.commit());
+  await assertFails(deleteDoc(doc(db,'expense_reversals/partial')));
+  await assertFails(updateDoc(doc(db,'expense_reversals/partial'),{reason:'Rewrite'}));
+});
+test('expense paid on creation links receipt and legacy review cannot erase payments', async () => {
+  const db=env.authenticatedContext('office').firestore();
+  const batch=writeBatch(db);
+  batch.set(doc(db,'expenses/bill'),{...billData(500),lastPaymentId:'opening'});
+  batch.set(doc(db,'expense_payments/opening'),{expenseId:'bill',amount:500,paidAt:Timestamp.now(),reference:'Cash',createdAt:serverTimestamp()});
+  await assertSucceeds(batch.commit());
+  await assertFails(updateDoc(doc(db,'expenses/bill'),{amountPaid:0,paymentReviewed:true}));
+  await env.withSecurityRulesDisabled(c=>setDoc(doc(c.firestore(),'expenses/legacy'),{amount:50,category:'Fuel',expenseDate:Timestamp.now()}));
+  await assertSucceeds(updateDoc(doc(db,'expenses/legacy'),{amountPaid:0,paymentReviewed:true}));
+  const driver=env.authenticatedContext('driver').firestore();
+  for (const collection of ['expenses','expense_payments','expense_reversals']) {
+    await assertFails(getDoc(doc(driver,`${collection}/bill`)));
+    await assertFails(setDoc(doc(driver,`${collection}/fake`),billData()));
+  }
+});

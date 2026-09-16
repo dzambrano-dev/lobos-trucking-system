@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/operations.dart';
 import 'records.dart';
+import 'expense_accounts_page.dart';
 import 'company_settings.dart';
 import '../models/app_user.dart';
 import 'loads/load_management_page.dart';
@@ -100,6 +101,8 @@ class _DashboardState extends State<Dashboard> {
                       }
                     },
                   )
+                : selected == 4
+                ? ExpenseAccountsPage(store: store)
                 : selected == 1 && widget.user != null
                 ? LoadManagementPage(
                     user: widget.user!,
@@ -164,10 +167,7 @@ class _OverviewState extends State<Overview> {
     String label,
     String value,
     String detail,
-    IconData icon,
-    int page,
-  ) => Card(
-    child: InkWell(
+    IconData icon,…10 tokens truncated…ild: InkWell(
       onTap: () => widget.navigate(page),
       borderRadius: BorderRadius.circular(16),
       child: Padding(

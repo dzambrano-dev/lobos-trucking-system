@@ -80,3 +80,9 @@ Deploy the supplied Firestore indexes as well as rules and hosting. Accounts and
 The dispatch invoice button reads **Create invoice** until the delivery is billed, then **View invoice**. Financial transaction and driver access rules are unchanged by this navigation update.
 
 Assigned loads expose **Reschedule pickup**. Open loads expose **Cancel load** with confirmation; both retain audit history. Overdue pickup cards explain why they need attention. Once a driver has started, the office cannot reschedule over their progress. Driver screens list started trips first, followed by new assignments in pickup order.
+
+### Expense accounts
+
+Admins can enter vendor bills as unpaid or paid in full, record partial payments with dates and references, and reverse mistaken payment entries while retaining history. Balances cannot be increased or reduced without matching payment records. Older expenses show Needs review until their known payments are recorded or they are confirmed unpaid.
+
+The month selector shows incurred expenses, net expense payments, customer receipts, net cash flow, and an operating profit estimate (invoiced revenue less recorded expenses). Outstanding bills span all dates. Cash figures depend on individually recorded payments; legacy paid invoices may lack these records. These operational estimates exclude taxes, depreciation, and missing costs.
