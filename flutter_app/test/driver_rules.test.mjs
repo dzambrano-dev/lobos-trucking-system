@@ -556,3 +556,22 @@ test('drivers cannot access billing, change roles, or activate staff access', as
   await assertFails(updateDoc(doc(db, 'users', driverId), {permissions: managerPermissions}));
   await assertFails(setDoc(doc(db, 'staff', driverId), {active: true}));
 });
+
+
+test('office reschedules or cancels with an audit event, drivers cannot reschedule', async () => {
+  await testEnvironment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'loads', 'schedule-test'), loadData());
+  });
+  const change = (uid, patch, type, status, eventId) => {
+    const db = testEnvironment.authenticatedContext(uid).firestore();
+    const ref = doc(db, 'loads', 'schedule-test');
+    const batch = writeBatch(db);
+    batch.update(ref, {...patch, lastEventId:eventId, updatedAt:serverTimestamp()});
+    batch.set(doc(ref, 'events', eventId), eventData(uid,type,status,'Office schedule update'));
+    return batch.commit();
+  };
+  await assertFails(change(driverId,{scheduledPickupAt:new Date('2026-10-01')},'load_updated','assigned','denied'));
+  await assertSucceeds(change(managerId,{scheduledPickupAt:new Date('2026-10-01')},'load_updated','assigned','rescheduled'));
+  await assertSucceeds(change(managerId,{status:'cancelled'},'cancelled','cancelled','cancelled'));
+  await assertFails(change(managerId,{scheduledPickupAt:new Date('2026-10-02')},'load_updated','cancelled','closed'));
+});

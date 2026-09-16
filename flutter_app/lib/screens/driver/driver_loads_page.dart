@@ -11,19 +11,28 @@ import '../../widgets/load_status_chip.dart';
 import 'customer_signature_page.dart';
 
 class DriverLoadsPage extends StatefulWidget {
-  const DriverLoadsPage({super.key, required this.user});
+  const DriverLoadsPage({
+    super.key,
+    required this.user,
+    this.repository,
+    this.onSignOut,
+  });
 
   final AppUser user;
+  final LoadRepository? repository;
+  final VoidCallback? onSignOut;
 
   @override
   State<DriverLoadsPage> createState() => _DriverLoadsPageState();
 }
 
 class _DriverLoadsPageState extends State<DriverLoadsPage> {
-  final _loads = LoadRepository();
+  late final _loads = widget.repository ?? LoadRepository();
+  late final assignments = _loads.watchAssignedLoads(widget.user.uid);
   String? _busyLoadId;
 
   Future<void> _advance(LoadRecord load) async {
+    if (_busyLoadId != null) return;
     final next = load.status.next;
     if (next == null) return;
 
@@ -60,13 +69,14 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
   }
 
   Future<void> _reportIssue(LoadRecord load) async {
-    final controller = TextEditingController();
+    if (_busyLoadId != null) return;
+    var description = '';
     final note = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Report delay or problem'),
         content: TextField(
-          controller: controller,
+          onChanged: (value) => description = value,
           autofocus: true,
           minLines: 3,
           maxLines: 6,
@@ -84,7 +94,7 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
           ),
           ElevatedButton(
             onPressed: () {
-              final value = controller.text.trim();
+              final value = description.trim();
               if (value.isNotEmpty) Navigator.of(context).pop(value);
             },
             child: const Text('Send report'),
@@ -92,9 +102,8 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
         ],
       ),
     );
-    controller.dispose();
 
-    if (note == null) return;
+    if (note == null || !mounted) return;
     setState(() => _busyLoadId = load.id);
     try {
       await _loads.reportIssue(load: load, actor: widget.user, note: note);
@@ -131,13 +140,14 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
         actions: [
           IconButton(
             tooltip: 'Sign out',
-            onPressed: FirebaseAuth.instance.signOut,
+            onPressed:
+                widget.onSignOut ?? () => FirebaseAuth.instance.signOut(),
             icon: const Icon(Icons.logout),
           ),
         ],
       ),
       body: StreamBuilder<List<LoadRecord>>(
-        stream: _loads.watchAssignedLoads(widget.user.uid),
+        stream: assignments,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -159,7 +169,16 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
             );
           }
 
-          final openLoads = loads.where((load) => !load.isClosed).toList();
+          final openLoads = loads.where((load) => !load.isClosed).toList()
+            ..sort((a, b) {
+              final started =
+                  (a.status == LoadProgressStatus.assigned ? 1 : 0) -
+                  (b.status == LoadProgressStatus.assigned ? 1 : 0);
+              if (started != 0) return started;
+              return (a.scheduledPickupAt ?? DateTime(2100)).compareTo(
+                b.scheduledPickupAt ?? DateTime(2100),
+              );
+            });
           final recentHistory = loads
               .where((load) => load.isClosed)
               .take(10)
@@ -169,12 +188,18 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
             padding: const EdgeInsets.all(16),
             children: [
               if (openLoads.isNotEmpty) ...[
-                Text('Active', style: Theme.of(context).textTheme.titleLarge),
+                Text(
+                  'Your active deliveries',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const Text(
+                  'Continue your current trip first. New assignments follow by pickup time.',
+                ),
                 const SizedBox(height: 10),
                 ...openLoads.map(
                   (load) => _DriverLoadCard(
                     load: load,
-                    busy: _busyLoadId == load.id,
+                    busy: _busyLoadId != null,
                     onAdvance: () => _advance(load),
                     onReportIssue: () => _reportIssue(load),
                     onViewProof: load.hasDeliveryProof

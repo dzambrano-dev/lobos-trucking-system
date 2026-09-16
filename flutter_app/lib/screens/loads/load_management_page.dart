@@ -6,6 +6,7 @@ import '../../models/app_user.dart';
 import '../../services/operations.dart';
 import '../invoice_workspace.dart';
 import '../../models/load_record.dart';
+import '../../models/load_status.dart';
 import '../../models/dispatch_queue.dart';
 import '../../services/client_repository.dart';
 import '../../services/load_repository.dart';
@@ -158,6 +159,89 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
     }
   }
 
+  Future<void> _reschedule(LoadRecord load) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final original = load.scheduledPickupAt ?? now;
+    final date = await showDatePicker(
+      context: context,
+      initialDate: original.isBefore(today) ? today : original,
+      firstDate: today,
+      lastDate: DateTime(now.year + 10),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(original),
+    );
+    if (time == null || !mounted) return;
+    try {
+      await _loads.adjustSchedule(
+        loadId: load.id,
+        actor: widget.user,
+        pickupAt: DateTime(
+          date.year,
+          date.month,
+          date.day,
+          time.hour,
+          time.minute,
+        ),
+      );
+      if (mounted) {
+        _showMessage(
+          'Pickup rescheduled. The driver will see the updated time.',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        _showMessage(
+          error is StateError
+              ? error.message.toString()
+              : 'Unable to reschedule. Please try again.',
+        );
+      }
+    }
+  }
+
+  Future<void> _cancelLoad(LoadRecord load) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Cancel ${load.loadNumber}?'),
+        content: const Text(
+          'Use this only if the trip is no longer needed. The load and its history will be kept.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep load'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Cancel load'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _loads.adjustSchedule(
+        loadId: load.id,
+        actor: widget.user,
+        cancel: true,
+      );
+      if (mounted) _showMessage('Load cancelled.');
+    } catch (error) {
+      if (mounted) {
+        _showMessage(
+          error is StateError
+              ? error.message.toString()
+              : 'Unable to cancel. Please try again.',
+        );
+      }
+    }
+  }
+
   Future<void> _resolveIssue(LoadRecord load) async {
     try {
       await _loads.resolveIssue(load: load, actor: widget.user);
@@ -288,6 +372,16 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
                               load: load,
                               canManage: widget.user.permissions.manageLoads,
                               onResolveIssue: () => _resolveIssue(load),
+                              onReschedule:
+                                  widget.user.permissions.manageLoads &&
+                                      load.status == LoadProgressStatus.assigned
+                                  ? () => _reschedule(load)
+                                  : null,
+                              onCancel:
+                                  widget.user.permissions.manageLoads &&
+                                      !load.isClosed
+                                  ? () => _cancelLoad(load)
+                                  : null,
                               invoiceExists: billed.contains(load.id),
                               onBill:
                                   billingReady &&
@@ -323,6 +417,8 @@ class _ManagerLoadCard extends StatelessWidget {
     required this.onViewProof,
     required this.onBill,
     required this.invoiceExists,
+    required this.onReschedule,
+    required this.onCancel,
   });
 
   final LoadRecord load;
@@ -331,6 +427,8 @@ class _ManagerLoadCard extends StatelessWidget {
   final VoidCallback? onViewProof;
   final VoidCallback? onBill;
   final bool invoiceExists;
+  final VoidCallback? onReschedule;
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -366,6 +464,39 @@ class _ManagerLoadCard extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             _DetailRow(icon: Icons.schedule_rounded, text: scheduled),
+            if (!load.isClosed &&
+                (load.scheduledPickupAt == null ||
+                    load.scheduledPickupAt!.isBefore(
+                      DateTime(
+                        DateTime.now().year,
+                        DateTime.now().month,
+                        DateTime.now().day,
+                      ),
+                    )))
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  load.status == LoadProgressStatus.assigned
+                      ? 'Pickup date is overdue or missing. Reschedule it, or cancel if the trip is no longer needed.'
+                      : 'Pickup date has passed. Check with the driver for a progress update.',
+                ),
+              ),
+            Wrap(
+              spacing: 8,
+              children: [
+                if (onReschedule != null)
+                  OutlinedButton.icon(
+                    onPressed: onReschedule,
+                    icon: const Icon(Icons.event),
+                    label: const Text('Reschedule pickup'),
+                  ),
+                if (onCancel != null)
+                  TextButton(
+                    onPressed: onCancel,
+                    child: const Text('Cancel load'),
+                  ),
+              ],
+            ),
             _DetailRow(
               icon: Icons.person_outline_rounded,
               text: load.assignedDriverName,

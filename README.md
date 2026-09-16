@@ -78,3 +78,5 @@ For a delivered load, admins choose **Create / view invoice** and enter the agre
 Deploy the supplied Firestore indexes as well as rules and hosting. Accounts and passwords are managed in Firebase Authentication; permission profiles are managed by the owner in Firestore. Disable the profile to revoke ongoing data access.
 
 The dispatch invoice button reads **Create invoice** until the delivery is billed, then **View invoice**. Financial transaction and driver access rules are unchanged by this navigation update.
+
+Assigned loads expose **Reschedule pickup**. Open loads expose **Cancel load** with confirmation; both retain audit history. Overdue pickup cards explain why they need attention. Once a driver has started, the office cannot reschedule over their progress. Driver screens list started trips first, followed by new assignments in pickup order.

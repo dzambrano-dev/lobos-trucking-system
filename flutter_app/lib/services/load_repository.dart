@@ -83,6 +83,46 @@ class LoadRepository {
     return loadRef.id;
   }
 
+  Future<void> adjustSchedule({
+    required String loadId,
+    required AppUser actor,
+    DateTime? pickupAt,
+    bool cancel = false,
+  }) async {
+    final ref = _loads.doc(loadId);
+    final event = ref.collection('events').doc();
+    await _firestore.runTransaction((tx) async {
+      final snapshot = await tx.get(ref);
+      if (!snapshot.exists) throw StateError('This load no longer exists.');
+      final current = LoadRecord.fromFirestore(snapshot.id, snapshot.data()!);
+      if (current.isClosed) throw StateError('This load is already closed.');
+      if (!cancel && current.status != LoadProgressStatus.assigned) {
+        throw StateError(
+          'The driver has already started this load. Refresh to see the latest progress.',
+        );
+      }
+      if (!cancel && pickupAt == null) {
+        throw StateError('Choose a pickup date and time.');
+      }
+      final status = cancel ? LoadProgressStatus.cancelled : current.status;
+      tx.update(ref, {
+        if (cancel) 'status': status.value,
+        if (!cancel) 'scheduledPickupAt': Timestamp.fromDate(pickupAt!),
+        'lastEventId': event.id,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      tx.set(
+        event,
+        _eventData(
+          actor: actor,
+          type: cancel ? 'cancelled' : 'load_updated',
+          status: status,
+          note: cancel ? 'Cancelled by office' : 'Pickup rescheduled by office',
+        ),
+      );
+    });
+  }
+
   Future<void> updateProgress({
     required LoadRecord load,
     required LoadProgressStatus next,
