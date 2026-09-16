@@ -167,7 +167,10 @@ class _OverviewState extends State<Overview> {
     String label,
     String value,
     String detail,
-    IconData icon,…10 tokens truncated…ild: InkWell(
+    IconData icon,
+    int page,
+  ) => Card(
+    child: InkWell(
       onTap: () => widget.navigate(page),
       borderRadius: BorderRadius.circular(16),
       child: Padding(
