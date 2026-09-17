@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../widgets/expense_insights.dart';
 import '../services/operations.dart';
 import '../services/expense_accounts.dart';
 import '../services/expense_reports.dart';
@@ -72,6 +74,7 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
   late final accounts = ExpenseAccounts(widget.store.db);
   DateTime month = DateTime(DateTime.now().year, DateTime.now().month);
   String filter = 'All', search = '';
+  bool insights = false;
 
   Future<void> edit([Record? bill]) async {
     try {
@@ -291,15 +294,29 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Expenses',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Refresh financial report',
+              onPressed: refresh,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
         Wrap(
           spacing: 12,
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Text(
-              'Expense accounts',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
             FilledButton.icon(
               onPressed: () => edit(),
               icon: const Icon(Icons.add),
@@ -362,26 +379,18 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
         ),
         Row(
           children: [
-            const Expanded(
-              child: Text(
-                'Snapshot report. Refresh for updates from other users.',
-              ),
-            ),
-            IconButton(
-              tooltip: 'Refresh financial report',
-              onPressed: refresh,
-              icon: const Icon(Icons.refresh),
-            ),
-          ],
-        ),
-        Row(
-          children: [
             IconButton(
               tooltip: 'Previous month',
               onPressed: () => changeMonth(-1),
               icon: const Icon(Icons.chevron_left),
             ),
-            Text('${month.year}-${month.month.toString().padLeft(2, '0')}'),
+            Expanded(
+              child: Text(
+                DateFormat.yMMMM().format(month),
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
             IconButton(
               tooltip: 'Next month',
               onPressed: () => changeMonth(1),
@@ -389,168 +398,204 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
             ),
           ],
         ),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final entry in {
-              'Expenses incurred': 'incurred',
-              'Expense payments, net': 'cashOut',
-              'Still owed · all dates': 'owed',
-              'Customer receipts, net': 'cashIn',
-              'Net cash flow': 'netCash',
-              'Operating profit estimate': 'profit',
-            }.entries)
-              SizedBox(
-                width: 225,
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+            Expanded(
+              child: ExpenseMetric(
+                label: 'Expenses this month',
+                value: money(summary['incurred']! / 100),
+                detail: 'Paid + unpaid bills',
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ExpenseMetric(
+                label: 'Still owed',
+                value: money(summary['owed']! / 100),
+                detail: 'All dates · reviewed bills',
+                emphasis: true,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(
+              value: false,
+              icon: Icon(Icons.receipt_long_outlined),
+              label: Text('Bills'),
+            ),
+            ButtonSegment(
+              value: true,
+              icon: Icon(Icons.donut_large),
+              label: Text('Insights'),
+            ),
+          ],
+          selected: {insights},
+          onSelectionChanged: (value) => setState(() => insights = value.first),
+        ),
+        const SizedBox(height: 16),
+        if (insights) ...[
+          ExpenseInsights(
+            categories: expenseCategories(data['expenses']!, month),
+            summary: summary,
+          ),
+          const ExpansionTile(
+            title: Text(
+              'How these figures work',
+              style: TextStyle(fontSize: 14),
+            ),
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Text(
+                  'Charts cover the selected month and all expense categories, regardless of bill filters. Profit uses invoiced revenue minus expenses incurred. Cash uses recorded payment dates and excludes reversed entries. Older paid invoices may lack payment entries. These estimates exclude taxes, depreciation and missing costs. Refresh for updates from other users.',
+                ),
+              ),
+            ],
+          ),
+        ] else ...[
+          if (summary['review']! > 0)
+            Text(
+              '${summary['review']} older expense(s) need payment review. Amount owed and cash out are incomplete until reviewed.',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          if (dueCount > 0 || overdueInvoices > 0)
+            Wrap(
+              spacing: 8,
+              children: [
+                if (dueCount > 0)
+                  TextButton.icon(
+                    onPressed: () => setState(() {
+                      filter = 'Due soon';
+                    }),
+                    icon: const Icon(Icons.schedule),
+                    label: Text('$dueCount bills overdue / due within 7 days'),
+                  ),
+                if (overdueInvoices > 0 && widget.onOpenInvoices != null)
+                  TextButton.icon(
+                    onPressed: widget.onOpenInvoices,
+                    icon: const Icon(Icons.receipt_long),
+                    label: Text('$overdueInvoices overdue invoices'),
+                  ),
+              ],
+            ),
+          TextField(
+            decoration: const InputDecoration(
+              labelText: 'Search vendor, category, truck or notes',
+              prefixIcon: Icon(Icons.search),
+            ),
+            onChanged: (v) => setState(() => search = v.toLowerCase()),
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final value in [
+                  'All',
+                  'Unpaid',
+                  'Due soon',
+                  'Paid',
+                  'Needs review',
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(value),
+                      selected: filter == value,
+                      onSelected: (_) => setState(() => filter = value),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            filter == 'All'
+                ? 'Bills incurred in selected month'
+                : '$filter bills · all dates',
+          ),
+          const SizedBox(height: 12),
+          if (bills.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text('No expenses match this view.'),
+            ),
+          for (final bill in bills)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${bill['category']} · ${bill['vendor'] ?? 'Vendor not entered'}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      '${shortDate(bill['expenseDate'])} · ${expenseStatus(bill)}',
+                    ),
+                    Text('Bill: ${money(bill['amount'])}'),
+                    if (expenseStatus(bill) != 'Needs review')
+                      Text(
+                        'Paid: ${money(bill['amountPaid'])} · Owed: ${money((cents(bill['amount']) - cents(bill['amountPaid'])) / 100)}',
+                      ),
+                    if (dateOf(bill['dueDate']) != null)
+                      Text('Due ${shortDate(bill['dueDate'])}'),
+                    if ((bill['notes'] ?? '').toString().isNotEmpty)
+                      Text(
+                        bill['notes'].toString(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
                       children: [
-                        Text(entry.key),
-                        Text(
-                          money(summary[entry.value]! / 100),
-                          style: Theme.of(context).textTheme.titleLarge,
+                        if (expenseStatus(bill) != 'Paid')
+                          FilledButton(
+                            onPressed: () => pay(bill),
+                            child: Text(
+                              expenseStatus(bill) == 'Needs review'
+                                  ? 'Record known payment'
+                                  : 'Record payment',
+                            ),
+                          ),
+                        if (expenseStatus(bill) == 'Needs review')
+                          TextButton(
+                            onPressed: () async {
+                              await editRecord(
+                                context,
+                                title: 'Confirm this bill is entirely unpaid',
+                                fields: const [],
+                                onSave: (_) => change(
+                                  () => accounts.reviewUnpaid(
+                                    bill['id'] as String,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: const Text('Confirm unpaid'),
+                          ),
+                        TextButton(
+                          onPressed: () => edit(bill),
+                          child: const Text('Edit bill'),
+                        ),
+                        TextButton(
+                          onPressed: () => openHistory(bill),
+                          child: const Text('Payment history'),
                         ),
                       ],
                     ),
-                  ),
+                  ],
                 ),
-              ),
-          ],
-        ),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: Text(
-            'Monthly profit estimate = invoiced revenue minus expenses incurred. Cash flow uses payment dates and excludes reversed entries from their original month. Cash totals include only recorded payment entries; older paid invoices may lack entries. This excludes taxes, depreciation and costs not entered here.',
-          ),
-        ),
-        if (summary['review']! > 0)
-          Text(
-            '${summary['review']} older expense(s) need payment review. Amount owed and cash out are incomplete until reviewed.',
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-        if (dueCount > 0 || overdueInvoices > 0)
-          Wrap(
-            spacing: 8,
-            children: [
-              if (dueCount > 0)
-                TextButton.icon(
-                  onPressed: () => setState(() {
-                    filter = 'Due soon';
-                  }),
-                  icon: const Icon(Icons.schedule),
-                  label: Text('$dueCount bills overdue / due within 7 days'),
-                ),
-              if (overdueInvoices > 0 && widget.onOpenInvoices != null)
-                TextButton.icon(
-                  onPressed: widget.onOpenInvoices,
-                  icon: const Icon(Icons.receipt_long),
-                  label: Text('$overdueInvoices overdue invoices'),
-                ),
-            ],
-          ),
-        TextField(
-          decoration: const InputDecoration(
-            labelText: 'Search vendor, category, truck or notes',
-            prefixIcon: Icon(Icons.search),
-          ),
-          onChanged: (v) => setState(() => search = v.toLowerCase()),
-        ),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (final value in [
-              'All',
-              'Unpaid',
-              'Due soon',
-              'Paid',
-              'Needs review',
-            ])
-              ChoiceChip(
-                label: Text(value),
-                selected: filter == value,
-                onSelected: (_) => setState(() => filter = value),
-              ),
-          ],
-        ),
-        Text(
-          filter == 'All'
-              ? 'Bills incurred in selected month'
-              : '$filter bills · all dates',
-        ),
-        const SizedBox(height: 12),
-        if (bills.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(24),
-            child: Text('No expenses match this view.'),
-          ),
-        for (final bill in bills)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${bill['category']} · ${bill['vendor'] ?? 'Vendor not entered'}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Text(
-                    '${shortDate(bill['expenseDate'])} · ${expenseStatus(bill)}',
-                  ),
-                  Text('Bill: ${money(bill['amount'])}'),
-                  if (expenseStatus(bill) != 'Needs review')
-                    Text(
-                      'Paid: ${money(bill['amountPaid'])} · Owed: ${money((cents(bill['amount']) - cents(bill['amountPaid'])) / 100)}',
-                    ),
-                  if (dateOf(bill['dueDate']) != null)
-                    Text('Due ${shortDate(bill['dueDate'])}'),
-                  if ((bill['notes'] ?? '').toString().isNotEmpty)
-                    Text(bill['notes'].toString()),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      if (expenseStatus(bill) != 'Paid')
-                        FilledButton(
-                          onPressed: () => pay(bill),
-                          child: Text(
-                            expenseStatus(bill) == 'Needs review'
-                                ? 'Record known payment'
-                                : 'Record payment',
-                          ),
-                        ),
-                      if (expenseStatus(bill) == 'Needs review')
-                        TextButton(
-                          onPressed: () async {
-                            await editRecord(
-                              context,
-                              title: 'Confirm this bill is entirely unpaid',
-                              fields: const [],
-                              onSave: (_) => change(
-                                () =>
-                                    accounts.reviewUnpaid(bill['id'] as String),
-                              ),
-                            );
-                          },
-                          child: const Text('Confirm unpaid'),
-                        ),
-                      TextButton(
-                        onPressed: () => edit(bill),
-                        child: const Text('Edit bill'),
-                      ),
-                      TextButton(
-                        onPressed: () => openHistory(bill),
-                        child: const Text('Payment history'),
-                      ),
-                    ],
-                  ),
-                ],
               ),
             ),
-          ),
+        ],
       ],
     );
   }
