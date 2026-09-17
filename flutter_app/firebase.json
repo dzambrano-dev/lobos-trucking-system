@@ -1,1 +1,94 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"lobos-trucking","appId":"1:780175935349:android:8001a81322db80e981753c","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"lobos-trucking","configurations":{"android":"1:780175935349:android:8001a81322db80e981753c","ios":"1:780175935349:ios:b928f09b5af2eab381753c","macos":"1:780175935349:ios:b928f09b5af2eab381753c","web":"1:780175935349:web:5d58839ef9a294fb81753c","windows":"1:780175935349:web:e07154ba893d39d581753c"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "lobos-trucking",
+          "appId": "1:780175935349:android:8001a81322db80e981753c",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "lobos-trucking",
+          "configurations": {
+            "android": "1:780175935349:android:8001a81322db80e981753c",
+            "ios": "1:780175935349:ios:b928f09b5af2eab381753c",
+            "macos": "1:780175935349:ios:b928f09b5af2eab381753c",
+            "web": "1:780175935349:web:5d58839ef9a294fb81753c",
+            "windows": "1:780175935349:web:e07154ba893d39d581753c"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8085
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          }
+        ]
+      },
+      {
+        "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "/flutter_bootstrap.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "/main.dart.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
+    ]
+  }
+}
