@@ -108,3 +108,9 @@ npx firebase emulators:exec --only firestore --project demo-lobos "node tool/ver
 ```
 
 The verifier only accepts a loopback emulator, writes to `demo-lobos`, and compares every restored document field. A production recovery requires a separate, deliberate recovery procedure including Authentication and app deployment.
+
+### Firebase usage optimizations
+
+Expense reporting uses explicit server snapshots instead of six permanent collection listeners. Only payment entries from the selected calendar month are fetched; reversal queries target those payment IDs. Changing months reuses the loaded bill/invoice balances. Full expense payment history is fetched only when opened. Use **Refresh financial report** to see another user's changes; successful expense edits/payments/reversals automatically refresh. Complete bill and invoice sets are still read for correct all-date balances, legacy review, and exports—no totals are calculated from a truncated list.
+
+Driver queries retain all active assigned loads and fetch only the ten newest delivered/cancelled loads, matching the existing recent-history UI. The assigned-driver/status/updatedAt composite index must be READY before deploying this client. Dispatch remains live. These changes reduce unnecessary reads as history grows; actual savings depend on usage and do not guarantee staying below Firebase's quotas.

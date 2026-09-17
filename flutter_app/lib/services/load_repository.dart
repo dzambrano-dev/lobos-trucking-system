@@ -30,11 +30,45 @@ class LoadRepository {
   }
 
   Stream<List<LoadRecord>> watchAssignedLoads(String driverUid) {
-    return _loads
-        .where('assignedDriverId', isEqualTo: driverUid)
+    final assigned = _loads.where('assignedDriverId', isEqualTo: driverUid);
+    final active = assigned
+        .where(
+          'status',
+          whereIn: ['assigned', 'accepted', 'arrived_at_pickup', 'in_transit'],
+        )
+        .orderBy('updatedAt', descending: true);
+    final history = assigned
+        .where('status', whereIn: ['delivered', 'cancelled'])
         .orderBy('updatedAt', descending: true)
-        .snapshots()
-        .map(_recordsFromSnapshot);
+        .limit(10);
+    return Stream<List<LoadRecord>>.multi((controller) {
+      List<LoadRecord>? open, closed;
+      void emit() {
+        if (open == null || closed == null) return;
+        final rows = {
+          for (final load in [...open!, ...closed!]) load.id: load,
+        }.values.toList();
+        rows.sort(
+          (a, b) => (b.updatedAt ?? DateTime(1970)).compareTo(
+            a.updatedAt ?? DateTime(1970),
+          ),
+        );
+        controller.add(rows);
+      }
+
+      final first = active.snapshots().listen((s) {
+        open = _recordsFromSnapshot(s);
+        emit();
+      }, onError: controller.addError);
+      final second = history.snapshots().listen((s) {
+        closed = _recordsFromSnapshot(s);
+        emit();
+      }, onError: controller.addError);
+      controller.onCancel = () async {
+        await first.cancel();
+        await second.cancel();
+      };
+    });
   }
 
   Future<String> createLoad({

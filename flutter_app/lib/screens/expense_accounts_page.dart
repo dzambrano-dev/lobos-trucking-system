@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/operations.dart';
 import '../services/expense_accounts.dart';
+import '../services/expense_reports.dart';
 import '../services/monthly_exports.dart';
 import '../services/download.dart';
 import '../widgets/record_editor.dart';
@@ -18,17 +19,56 @@ class ExpenseAccountsPage extends StatefulWidget {
 }
 
 class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
-  static const names = [
-    'expenses',
-    'expense_payments',
-    'expense_reversals',
-    'invoices',
-    'payments',
-    'payment_reversals',
-  ];
-  late final streams = {
-    for (final name in names) name: widget.store.watch(name),
-  };
+  late final reports = ExpenseReports(widget.store.db);
+  Map<String, List<Record>>? reportData;
+  late Future<Map<String, List<Record>>> report = fetch();
+  Future<Map<String, List<Record>>> fetch({bool reuseBalances = false}) async {
+    final result = await reports.load(
+      month,
+      balances: reuseBalances ? reportData : null,
+    );
+    reportData = result;
+    return result;
+  }
+
+  void refresh() {
+    if (mounted) {
+      setState(() {
+        report = fetch();
+      });
+    }
+  }
+
+  void changeMonth(int direction) {
+    setState(() {
+      month = DateTime(month.year, month.month + direction);
+      report = fetch(reuseBalances: true);
+    });
+  }
+
+  Future<void> change(Future<void> Function() action) async {
+    await action();
+    refresh();
+  }
+
+  Future<void> openHistory(Record bill) async {
+    try {
+      final rows = await reports.history(bill['id'] as String);
+      if (!mounted) return;
+      await history(bill, rows['payments']!, rows['reversals']!);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to load payment history. Check your connection and try again.',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   late final accounts = ExpenseAccounts(widget.store.db);
   DateTime month = DateTime(DateTime.now().year, DateTime.now().month);
   String filter = 'All', search = '';
@@ -117,8 +157,13 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
           ),
         ],
       ],
-      onSave: (data) =>
-          accounts.save(data, id: id, paidNow: data['paymentState'] == 'Paid'),
+      onSave: (data) => change(
+        () => accounts.save(
+          data,
+          id: id,
+          paidNow: data['paymentState'] == 'Paid',
+        ),
+      ),
     );
   }
 
@@ -138,7 +183,8 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
         FieldSpec('paidAt', 'Actual payment date', date: true, required: true),
         FieldSpec('reference', 'Payment method / reference', required: true),
       ],
-      onSave: (data) => accounts.pay(bill['id'] as String, data, id),
+      onSave: (data) =>
+          change(() => accounts.pay(bill['id'] as String, data, id)),
     );
   }
 
@@ -192,9 +238,11 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
                                 multiline: true,
                               ),
                             ],
-                            onSave: (data) => accounts.reverse(
-                              p['id'] as String,
-                              data['reason'] as String,
+                            onSave: (data) => change(
+                              () => accounts.reverse(
+                                p['id'] as String,
+                                data['reason'] as String,
+                              ),
                             ),
                           );
                           if (saved == true && context.mounted) {
@@ -208,27 +256,6 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
       ),
     ),
   );
-
-  Widget collect(int index, Map<String, List<Record>> data) {
-    if (index == names.length) return content(data);
-    final name = names[index];
-    return StreamBuilder<List<Record>>(
-      stream: streams[name],
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const Center(
-            child: Text(
-              'Unable to load expense accounts. Check your connection and access.',
-            ),
-          );
-        }
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        return collect(index + 1, {...data, name: snapshot.data!});
-      },
-    );
-  }
 
   Widget content(Map<String, List<Record>> data) {
     final summary = expenseSummary(data, month);
@@ -335,17 +362,29 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
         ),
         Row(
           children: [
+            const Expanded(
+              child: Text(
+                'Snapshot report. Refresh for updates from other users.',
+              ),
+            ),
+            IconButton(
+              tooltip: 'Refresh financial report',
+              onPressed: refresh,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        Row(
+          children: [
             IconButton(
               tooltip: 'Previous month',
-              onPressed: () =>
-                  setState(() => month = DateTime(month.year, month.month - 1)),
+              onPressed: () => changeMonth(-1),
               icon: const Icon(Icons.chevron_left),
             ),
             Text('${month.year}-${month.month.toString().padLeft(2, '0')}'),
             IconButton(
               tooltip: 'Next month',
-              onPressed: () =>
-                  setState(() => month = DateTime(month.year, month.month + 1)),
+              onPressed: () => changeMonth(1),
               icon: const Icon(Icons.chevron_right),
             ),
           ],
@@ -490,8 +529,10 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
                               context,
                               title: 'Confirm this bill is entirely unpaid',
                               fields: const [],
-                              onSave: (_) =>
-                                  accounts.reviewUnpaid(bill['id'] as String),
+                              onSave: (_) => change(
+                                () =>
+                                    accounts.reviewUnpaid(bill['id'] as String),
+                              ),
                             );
                           },
                           child: const Text('Confirm unpaid'),
@@ -501,13 +542,7 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
                         child: const Text('Edit bill'),
                       ),
                       TextButton(
-                        onPressed: () => history(
-                          bill,
-                          data['expense_payments']!
-                              .where((p) => p['expenseId'] == bill['id'])
-                              .toList(),
-                          data['expense_reversals']!,
-                        ),
+                        onPressed: () => openHistory(bill),
                         child: const Text('Payment history'),
                       ),
                     ],
@@ -521,5 +556,37 @@ class _ExpenseAccountsPageState extends State<ExpenseAccountsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => collect(0, {});
+  Widget build(BuildContext context) =>
+      FutureBuilder<Map<String, List<Record>>>(
+        future: report,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData && !snapshot.hasError) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Unable to load financial report. Check your connection.',
+                  ),
+                  TextButton(onPressed: refresh, child: const Text('Retry')),
+                ],
+              ),
+            );
+          }
+          final loading = snapshot.connectionState != ConnectionState.done;
+          return Stack(
+            children: [
+              AbsorbPointer(absorbing: loading, child: content(snapshot.data!)),
+              if (loading)
+                const Align(
+                  alignment: Alignment.topCenter,
+                  child: LinearProgressIndicator(),
+                ),
+            ],
+          );
+        },
+      );
 }

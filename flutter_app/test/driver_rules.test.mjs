@@ -7,6 +7,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   Bytes,
+  collection, getDocs, query, where, orderBy, limit,
   deleteDoc,
   deleteField,
   doc,
@@ -574,4 +575,15 @@ test('office reschedules or cancels with an audit event, drivers cannot reschedu
   await assertSucceeds(change(managerId,{scheduledPickupAt:new Date('2026-10-01')},'load_updated','assigned','rescheduled'));
   await assertSucceeds(change(managerId,{status:'cancelled'},'cancelled','cancelled','cancelled'));
   await assertFails(change(managerId,{scheduledPickupAt:new Date('2026-10-02')},'load_updated','cancelled','closed'));
+});
+
+
+test('bounded driver queries allow own active and recent history only', async () => {
+  await seedLoad('active');
+  await seedLoad('closed', 'delivered');
+  const db = testEnvironment.authenticatedContext(driverId).firestore();
+  for (const statuses of [['assigned','accepted','arrived_at_pickup','in_transit'],['delivered','cancelled']]) {
+    await assertSucceeds(getDocs(query(collection(db,'loads'),where('assignedDriverId','==',driverId),where('status','in',statuses),orderBy('updatedAt','desc'),limit(10))));
+    await assertFails(getDocs(query(collection(db,'loads'),where('assignedDriverId','==',otherDriverId),where('status','in',statuses),orderBy('updatedAt','desc'),limit(10))));
+  }
 });
