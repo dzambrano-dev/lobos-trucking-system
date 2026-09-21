@@ -63,7 +63,9 @@ Map<String, String> monthlyExports(
         p['id'],
         id,
         reportDate(date),
-        related?[expense ? 'vendor' : 'clientName'],
+        expense
+            ? (related?['vendor'])
+            : (related?['client'] ?? related?['clientName']),
         amount(p['amount']),
         isReversed ? '0.00' : amount(p['amount']),
         isReversed ? 'Reversed' : 'Recorded',
@@ -172,7 +174,7 @@ Map<String, String> monthlyExports(
           [
             i['id'],
             reportDate(i['createdAt']),
-            i['clientName'],
+            i['client'] ?? i['clientName'],
             amount(i['amount']),
             amount(paidAmount(i)),
             amount(balanceOf(i)),

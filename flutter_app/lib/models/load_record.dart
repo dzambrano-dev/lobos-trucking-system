@@ -4,6 +4,11 @@ import 'load_status.dart';
 
 class LoadRecord {
   const LoadRecord({
+    this.pickupNumber = '',
+    this.reference = '',
+    this.driverNotes = '',
+    this.scheduledDeliveryAt,
+    this.contact = const {},
     required this.id,
     required this.loadNumber,
     required this.clientId,
@@ -24,6 +29,9 @@ class LoadRecord {
     required this.updatedAt,
   });
 
+  final String pickupNumber, reference, driverNotes;
+  final DateTime? scheduledDeliveryAt;
+  final Map<String, String> contact;
   final String id;
   final String loadNumber;
   final String clientId;
@@ -47,6 +55,11 @@ class LoadRecord {
     final delivery = data['delivery'] as Map<String, dynamic>?;
 
     return LoadRecord(
+      pickupNumber: data['pickupNumber'] as String? ?? '',
+      reference: data['reference'] as String? ?? '',
+      driverNotes: data['driverNotes'] as String? ?? '',
+      scheduledDeliveryAt: _dateFrom(data['scheduledDeliveryAt']),
+      contact: Map<String, String>.from(data['contact'] as Map? ?? {}),
       id: id,
       loadNumber: data['loadNumber'] as String? ?? id,
       clientId: data['clientId'] as String? ?? '',

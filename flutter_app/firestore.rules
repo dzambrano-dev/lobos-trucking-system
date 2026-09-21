@@ -131,7 +131,8 @@ service cloud.firestore {
           'createdBy',
           'lastEventId',
           'createdAt',
-          'updatedAt'
+          'updatedAt',
+          'pickupNumber', 'reference', 'driverNotes', 'scheduledDeliveryAt', 'contact',
         ])
         && loadData.loadNumber is string
         && loadData.loadNumber.size() > 0
@@ -169,7 +170,16 @@ service cloud.firestore {
         && loadData.lastEventId is string
         && loadData.lastEventId.size() > 0
         && loadData.createdAt is timestamp
-        && loadData.updatedAt is timestamp;
+        && loadData.updatedAt is timestamp
+        && loadData.get('pickupNumber','') is string && loadData.get('pickupNumber','').size() <= 80
+        && loadData.get('reference','') is string && loadData.get('reference','').size() <= 80
+        && loadData.get('driverNotes','') is string && loadData.get('driverNotes','').size() <= 1000
+        && (loadData.get('scheduledDeliveryAt',null) == null || (loadData.scheduledDeliveryAt is timestamp && loadData.scheduledDeliveryAt >= loadData.scheduledPickupAt))
+        && loadData.get('contact',{}) is map
+        && loadData.get('contact',{}).keys().hasOnly(['name','phone','email'])
+        && loadData.get('contact',{}).get('name','') is string && loadData.get('contact',{}).get('name','').size() <= 120
+        && loadData.get('contact',{}).get('phone','') is string && loadData.get('contact',{}).get('phone','').size() <= 40
+        && loadData.get('contact',{}).get('email','') is string && loadData.get('contact',{}).get('email','').size() <= 254;
     }
 
     function eventPath(loadId, eventId) {
@@ -377,6 +387,7 @@ service cloud.firestore {
           (
             before.status == 'assigned'
             && changed.hasOnly([
+              'pickupNumber', 'reference', 'driverNotes', 'scheduledDeliveryAt', 'contact',
               'clientId',
               'clientName',
               'pickupAddress',
@@ -398,6 +409,7 @@ service cloud.firestore {
               'in_transit'
             ]
             && changed.hasOnly([
+              'pickupNumber', 'reference', 'driverNotes', 'scheduledDeliveryAt', 'contact',
               'status',
               'needsAttention',
               'issueSummary',

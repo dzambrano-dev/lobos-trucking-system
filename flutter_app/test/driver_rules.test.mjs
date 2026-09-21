@@ -587,3 +587,23 @@ test('bounded driver queries allow own active and recent history only', async ()
     await assertFails(getDocs(query(collection(db,'loads'),where('assignedDriverId','==',otherDriverId),where('status','in',statuses),orderBy('updatedAt','desc'),limit(10))));
   }
 });
+
+test('trip information is audited, bounded, and readable only by assigned drivers', async () => {
+  await seedLoad('info', 'accepted');
+  const manager = testEnvironment.authenticatedContext(managerId).firestore();
+  const changes = {driverNotes: 'Use gate 2', pickupNumber: 'PU-1', reference: 'REF-1', contact: {name:'Receiver',phone:'5551234567',email:'receiver@example.com'}, scheduledDeliveryAt:new Date('2026-08-02T16:00:00Z')};
+  async function edit(db, actor, patch, eventId) {
+    const batch = writeBatch(db);
+    batch.update(doc(db,'loads/info'), {...patch, updatedAt:serverTimestamp(),lastEventId:eventId});
+    batch.set(doc(db,`loads/info/events/${eventId}`),eventData(actor,'load_updated','accepted'));
+    return batch.commit();
+  }
+  await assertFails(updateDoc(doc(manager,'loads/info'),changes));
+  await assertSucceeds(edit(manager,managerId,changes,'valid'));
+  const driver = testEnvironment.authenticatedContext(driverId).firestore();
+  await assertSucceeds(getDoc(doc(driver,'loads/info')));
+  await assertFails(getDoc(doc(testEnvironment.authenticatedContext(otherDriverId).firestore(),'loads/info')));
+  await assertFails(edit(driver,driverId,{driverNotes:'Changed'},'driver-edit'));
+  await assertFails(edit(manager,managerId,{driverNotes:'x'.repeat(1001)},'long'));
+  await assertFails(edit(manager,managerId,{scheduledDeliveryAt:new Date('2026-07-01')},'early'));
+});

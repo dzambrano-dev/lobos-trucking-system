@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../services/operations.dart';
 import '../widgets/record_editor.dart';
 import 'invoice_workspace.dart';
+import 'invoice_browser.dart';
+import '../widgets/contact_links.dart';
 
 class RecordsPage extends StatefulWidget {
   const RecordsPage({super.key, required this.collection, required this.store});
@@ -235,7 +237,15 @@ class _RecordsPageState extends State<RecordsPage> {
                 ],
               ),
               const SizedBox(height: 8),
-              Text(subtitle),
+              if (clients)
+                ClientContactCard(
+                  name: (row['contact'] ?? '').toString(),
+                  phone: (row['phone'] ?? '').toString(),
+                  email: (row['email'] ?? '').toString(),
+                  address: (row['address'] ?? '').toString(),
+                )
+              else
+                Text(subtitle),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
@@ -300,7 +310,11 @@ class _RecordsPageState extends State<RecordsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Padding(
+  Widget build(BuildContext context) => invoices
+      ? InvoiceBrowser(store: widget.store, onOpen: openInvoice)
+      : recordsBody(context);
+
+  Widget recordsBody(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/app_user.dart';
+import '../../widgets/load_information.dart';
+import '../../widgets/load_information_form.dart';
 import '../../services/operations.dart';
 import '../invoice_workspace.dart';
 import '../../models/load_record.dart';
@@ -118,7 +120,15 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
       final drivers = await UserRepository().getActiveDrivers();
       final clientRecords = await ClientRepository().getClients();
       final clients = clientRecords
-          .map((client) => _ClientChoice(id: client.id, name: client.name))
+          .map(
+            (client) => _ClientChoice(
+              id: client.id,
+              name: client.name,
+              contact: client.contact,
+              phone: client.phone,
+              email: client.email,
+            ),
+          )
           .toList();
 
       if (!mounted) return;
@@ -370,6 +380,16 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
                               ),
                             _ManagerLoadCard(
                               load: load,
+                              onEditInformation:
+                                  widget.user.permissions.manageLoads &&
+                                      !load.isClosed
+                                  ? () => editLoadInformation(
+                                      context,
+                                      load,
+                                      _loads,
+                                      widget.user,
+                                    )
+                                  : null,
                               canManage: widget.user.permissions.manageLoads,
                               onResolveIssue: () => _resolveIssue(load),
                               onReschedule:
@@ -417,6 +437,7 @@ class _ManagerLoadCard extends StatelessWidget {
     required this.onViewProof,
     required this.onBill,
     required this.invoiceExists,
+    this.onEditInformation,
     required this.onReschedule,
     required this.onCancel,
   });
@@ -427,6 +448,7 @@ class _ManagerLoadCard extends StatelessWidget {
   final VoidCallback? onViewProof;
   final VoidCallback? onBill;
   final bool invoiceExists;
+  final VoidCallback? onEditInformation;
   final VoidCallback? onReschedule;
   final VoidCallback? onCancel;
 
@@ -501,14 +523,13 @@ class _ManagerLoadCard extends StatelessWidget {
               icon: Icons.person_outline_rounded,
               text: load.assignedDriverName,
             ),
-            _DetailRow(
-              icon: Icons.trip_origin_rounded,
-              text: load.pickupAddress,
-            ),
-            _DetailRow(
-              icon: Icons.location_on_outlined,
-              text: load.deliveryAddress,
-            ),
+            LoadInformation(load: load),
+            if (onEditInformation != null)
+              TextButton.icon(
+                onPressed: onEditInformation,
+                icon: const Icon(Icons.edit_note),
+                label: const Text('Edit driver instructions'),
+              ),
             if (load.needsAttention) ...[
               const SizedBox(height: 12),
               Container(
@@ -588,6 +609,10 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
   final _formKey = GlobalKey<FormState>();
   final _pickupController = TextEditingController();
   final _deliveryController = TextEditingController();
+  final information = {
+    for (final field in loadInformationFields)
+      field.key: TextEditingController(),
+  };
   _ClientChoice? _client;
   AppUser? _driver;
   DateTime _scheduledPickupAt = DateTime.now();
@@ -635,6 +660,9 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
 
     try {
       await widget.repository.createLoad(
+        information: loadInformationData({
+          for (final entry in information.entries) entry.key: entry.value.text,
+        }),
         clientId: _client!.id,
         clientName: _client!.name,
         pickupAddress: _pickupController.text,
@@ -661,6 +689,7 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
           'have valid permissions maps, and contain the exact display names '
           'shown above.';
     }
+    if (error is StateError) return error.message.toString();
     return 'The load could not be created. Check the connection and try again.';
   }
 
@@ -668,6 +697,9 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
   void dispose() {
     _pickupController.dispose();
     _deliveryController.dispose();
+    for (final controller in information.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -693,7 +725,12 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
                         ),
                       )
                       .toList(),
-                  onChanged: (value) => setState(() => _client = value),
+                  onChanged: (value) => setState(() {
+                    _client = value;
+                    information['contactName']!.text = value?.contact ?? '';
+                    information['contactPhone']!.text = value?.phone ?? '';
+                    information['contactEmail']!.text = value?.email ?? '';
+                  }),
                   decoration: const InputDecoration(labelText: 'Client'),
                   validator: (value) =>
                       value == null ? 'Select a client.' : null,
@@ -755,6 +792,20 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
                   trailing: const Icon(Icons.edit_calendar_rounded),
                   onTap: _pickSchedule,
                 ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Optional driver details. Contact starts from the client record; change it for this trip if needed.',
+                ),
+                for (final field in loadInformationFields)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: TextFormField(
+                      controller: information[field.key],
+                      decoration: InputDecoration(labelText: field.label),
+                      minLines: field.multiline ? 3 : 1,
+                      maxLines: field.multiline ? 5 : 1,
+                    ),
+                  ),
                 if (_saveError != null) ...[
                   const SizedBox(height: 12),
                   Container(
@@ -810,7 +861,14 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
 }
 
 class _ClientChoice {
-  const _ClientChoice({required this.id, required this.name});
+  const _ClientChoice({
+    required this.id,
+    required this.name,
+    this.contact = '',
+    this.phone = '',
+    this.email = '',
+  });
+  final String contact, phone, email;
 
   final String id;
   final String name;

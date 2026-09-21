@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:pdf/widgets.dart' as pw;
 import 'operations.dart';
+import 'invoice_details.dart';
 
 Future<Uint8List> buildInvoicePdf({
   required Record company,
@@ -30,7 +31,10 @@ Future<Uint8List> buildInvoicePdf({
           'Issued: ${shortDate(invoice['createdAt'])}    Due: ${shortDate(invoice['dueDate'])}',
         ),
         pw.SizedBox(height: 24),
-        pw.Text('Bill to: ${invoice['client'] ?? ''}'),
+        pw.Text('Bill to: ${invoiceClient(invoice)}'),
+        pw.Text(invoiceReferences(invoice)),
+        if (dateOf(invoice['pickupDate']) != null)
+          pw.Text('Pickup date: ${shortDate(invoice['pickupDate'])}'),
         if ((invoice['clientAddress'] ?? '').toString().isNotEmpty)
           pw.Text(invoice['clientAddress'].toString()),
         if ((invoice['clientEmail'] ?? '').toString().isNotEmpty)

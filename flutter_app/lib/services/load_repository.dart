@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:intl/intl.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -72,6 +73,7 @@ class LoadRepository {
   }
 
   Future<String> createLoad({
+    Map<String, dynamic> information = const {},
     required String clientId,
     required String clientName,
     required String pickupAddress,
@@ -88,6 +90,7 @@ class LoadRepository {
     final batch = _firestore.batch();
 
     batch.set(loadRef, {
+      ...validatedInformation(information, scheduledPickupAt),
       'loadNumber': loadNumber,
       'clientId': clientId,
       'clientName': clientName.trim(),
@@ -117,6 +120,90 @@ class LoadRepository {
     return loadRef.id;
   }
 
+  static Map<String, dynamic> validatedInformation(
+    Map<String, dynamic> data,
+    DateTime pickup,
+  ) {
+    final result = <String, dynamic>{};
+    for (final entry in {
+      'pickupNumber': 80,
+      'reference': 80,
+      'driverNotes': 1000,
+    }.entries) {
+      final value = (data[entry.key] ?? '').toString().trim();
+      if (value.length > entry.value) {
+        throw StateError('${entry.key} is too long.');
+      }
+      result[entry.key] = value;
+    }
+    final contact = Map<String, dynamic>.from(data['contact'] as Map? ?? {});
+    final clean = <String, String>{};
+    for (final entry in {'name': 120, 'phone': 40, 'email': 254}.entries) {
+      final value = (contact[entry.key] ?? '').toString().trim();
+      if (value.length > entry.value) {
+        throw StateError('Contact ${entry.key} is too long.');
+      }
+      clean[entry.key] = value;
+    }
+    result['contact'] = clean;
+    final raw = data['scheduledDeliveryAt'];
+    DateTime? delivery;
+    if (raw is DateTime) {
+      delivery = raw;
+    } else if (raw is Timestamp) {
+      delivery = raw.toDate();
+    } else if (raw != null && raw.toString().trim().isNotEmpty) {
+      try {
+        delivery = DateFormat(
+          'yyyy-MM-dd HH:mm',
+        ).parseStrict(raw.toString().trim());
+      } on FormatException {
+        throw StateError('Use YYYY-MM-DD HH:MM for planned delivery.');
+      }
+    }
+    if (delivery != null && delivery.isBefore(pickup)) {
+      throw StateError('Planned delivery cannot be before pickup.');
+    }
+    result['scheduledDeliveryAt'] = delivery == null
+        ? null
+        : Timestamp.fromDate(delivery);
+    return result;
+  }
+
+  Future<void> updateInformation({
+    required String loadId,
+    required AppUser actor,
+    required Map<String, dynamic> information,
+  }) async {
+    final ref = _loads.doc(loadId),
+        event = _loads.doc(loadId).collection('events').doc();
+    await _firestore.runTransaction((tx) async {
+      final snapshot = await tx.get(ref);
+      if (!snapshot.exists) throw StateError('Load no longer exists.');
+      final load = LoadRecord.fromFirestore(snapshot.id, snapshot.data()!);
+      if (load.isClosed) {
+        throw StateError('Completed or cancelled loads cannot be edited.');
+      }
+      tx.update(ref, {
+        ...validatedInformation(
+          information,
+          load.scheduledPickupAt ?? DateTime(1970),
+        ),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'lastEventId': event.id,
+      });
+      tx.set(
+        event,
+        _eventData(
+          actor: actor,
+          type: 'load_updated',
+          status: load.status,
+          note: 'Office updated driver instructions / load details',
+        ),
+      );
+    });
+  }
+
   Future<void> adjustSchedule({
     required String loadId,
     required AppUser actor,
@@ -137,6 +224,13 @@ class LoadRepository {
       }
       if (!cancel && pickupAt == null) {
         throw StateError('Choose a pickup date and time.');
+      }
+      if (!cancel &&
+          current.scheduledDeliveryAt != null &&
+          pickupAt!.isAfter(current.scheduledDeliveryAt!)) {
+        throw StateError(
+          'Update planned delivery before moving pickup beyond it.',
+        );
       }
       final status = cancel ? LoadProgressStatus.cancelled : current.status;
       tx.update(ref, {

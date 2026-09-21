@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/invoice_pdf.dart';
+import '../services/invoice_details.dart';
+import '../widgets/contact_links.dart';
 import 'package:printing/printing.dart';
 import '../services/operations.dart';
 import '../widgets/record_editor.dart';
@@ -14,10 +16,18 @@ class InvoiceWorkspace extends StatefulWidget {
 }
 
 class _InvoiceWorkspaceState extends State<InvoiceWorkspace> {
+  late final details = InvoiceDetails(widget.store.db);
   late final stream = widget.store.db
       .collection('invoices')
       .doc(widget.id)
-      .snapshots();
+      .snapshots()
+      .asyncMap(
+        (s) async => s.exists
+            ? (await details.enrich([
+                {...s.data()!, 'id': s.id},
+              ])).single
+            : null,
+      );
   late final payments = widget.store.db
       .collection('payments')
       .where('invoiceId', isEqualTo: widget.id)
@@ -156,10 +166,10 @@ class _InvoiceWorkspaceState extends State<InvoiceWorkspace> {
             ),
           );
         }
-        if (!snapshot.hasData) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        final data = snapshot.data!.data();
+        final data = snapshot.data;
         if (data == null) {
           return const Center(child: Text('Invoice no longer exists.'));
         }
@@ -186,8 +196,23 @@ class _InvoiceWorkspaceState extends State<InvoiceWorkspace> {
                           data['client']?.toString() ?? 'Client',
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
-                        if (data['pickup'] != null)
-                          Text('${data['pickup']} → ${data['dropoff']}'),
+                        Text(invoiceReferences(data)),
+                        if (dateOf(data['pickupDate']) != null)
+                          Text('Pickup date: ${shortDate(data['pickupDate'])}'),
+                        ContactLink(
+                          kind: 'address',
+                          text: (data['pickup'] ?? '').toString(),
+                          label: 'Pickup',
+                        ),
+                        ContactLink(
+                          kind: 'address',
+                          text: (data['dropoff'] ?? '').toString(),
+                          label: 'Delivery',
+                        ),
+                        ContactLink(
+                          kind: 'email',
+                          text: (data['clientEmail'] ?? '').toString(),
+                        ),
                         const SizedBox(height: 12),
                         Text(
                           'Issued ${shortDate(data['createdAt'])} · Due ${shortDate(data['dueDate'])}',

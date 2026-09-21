@@ -181,7 +181,12 @@ class Operations {
         'pickup': data['pickupAddress'],
         'dropoff': data['deliveryAddress'],
         'driver': data['assignedDriverName'],
-        'reference': data['loadNumber'],
+        'reference': (data['reference'] ?? '').toString().isNotEmpty
+            ? data['reference']
+            : data['loadNumber'],
+        'loadNumber': data['loadNumber'],
+        'pickupNumber': data['pickupNumber'] ?? '',
+        'scheduledDate': data['scheduledPickupAt'],
         'price': amount,
         'status': 'completed',
         'createdAt': FieldValue.serverTimestamp(),
@@ -247,7 +252,17 @@ class Operations {
           'The client record is missing. Restore it before invoicing.',
         );
       }
+      final loadId = (data['loadId'] ?? '').toString();
+      final load = loadId.isEmpty
+          ? <String, dynamic>{}
+          : (await tx.get(db.collection('loads').doc(loadId))).data() ??
+                <String, dynamic>{};
       tx.set(ref, {
+        'metadataVersion': 1,
+        'loadNumber': data['loadNumber'] ?? load['loadNumber'] ?? '',
+        'pickupNumber': data['pickupNumber'] ?? load['pickupNumber'] ?? '',
+        'reference': data['reference'] ?? load['reference'] ?? '',
+        'pickupDate': data['scheduledDate'] ?? load['scheduledPickupAt'],
         'jobId': jobId,
         'clientId': data['clientId'],
         'client': customer.data()!['name'],

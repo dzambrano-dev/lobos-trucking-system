@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/app_user.dart';
+import '../../widgets/load_information.dart';
 import '../../models/load_record.dart';
 import '../../models/load_status.dart';
 import '../../services/load_repository.dart';
@@ -289,16 +290,7 @@ class _DriverLoadCard extends StatelessWidget {
               label: 'Pickup',
               value: scheduled,
             ),
-            _DriverDetail(
-              icon: Icons.trip_origin_rounded,
-              label: 'From',
-              value: load.pickupAddress,
-            ),
-            _DriverDetail(
-              icon: Icons.location_on_rounded,
-              label: 'To',
-              value: load.deliveryAddress,
-            ),
+            LoadInformation(load: load),
             if (load.needsAttention) ...[
               const SizedBox(height: 12),
               Container(
