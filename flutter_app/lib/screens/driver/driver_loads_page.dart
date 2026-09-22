@@ -37,6 +37,12 @@ class _DriverLoadsPageState extends State<DriverLoadsPage> {
     final next = load.status.next;
     if (next == null) return;
 
+    if (next == LoadProgressStatus.delivered && load.hasDeliveryProof) {
+      _showMessage(
+        'This reopened load already has a saved signature. Ask the office to confirm its delivery status.',
+      );
+      return;
+    }
     if (next == LoadProgressStatus.delivered) {
       // Delivery is the one step that needs its own screen because the
       // customer's name and signature become an immutable business record.

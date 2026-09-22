@@ -159,7 +159,7 @@ class Operations {
       final load = await tx.get(db.collection('loads').doc(loadId));
       final existing = await tx.get(ref);
       if (!load.exists || load.data()?['status'] != 'delivered') {
-        throw StateError('The driver must complete delivery before billing.');
+        throw StateError('Confirm delivery before billing.');
       }
       if (existing.exists) {
         if (existing.data()?['loadId'] != loadId) {

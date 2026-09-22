@@ -21,6 +21,7 @@ class _InvoiceBrowserState extends State<InvoiceBrowser> {
       .watch('invoices')
       .asyncMap(details.enrich);
   String client = '', search = '', status = 'all', period = 'All dates';
+  String dateBasis = 'createdAt';
   DateTimeRange? range;
   final selected = <String>{};
   bool busy = false;
@@ -51,6 +52,17 @@ class _InvoiceBrowserState extends State<InvoiceBrowser> {
       next = DateTimeRange(
         start: start,
         end: start.add(const Duration(days: 6)),
+      );
+    } else if (value == 'Last week') {
+      final start = today.subtract(Duration(days: today.weekday + 6));
+      next = DateTimeRange(
+        start: start,
+        end: start.add(const Duration(days: 6)),
+      );
+    } else if (value == 'Last month') {
+      next = DateTimeRange(
+        start: DateTime(now.year, now.month - 1),
+        end: DateTime(now.year, now.month, 0),
       );
     } else if (value == 'This month') {
       next = DateTimeRange(
@@ -159,7 +171,7 @@ class _InvoiceBrowserState extends State<InvoiceBrowser> {
             row['clientId'].toString(): invoiceClient(row),
       };
       final rows = all.where((r) {
-        final date = dateOf(r['createdAt']);
+        final date = dateOf(r[dateBasis]);
         final inRange =
             range == null ||
             (date != null &&
@@ -220,6 +232,22 @@ class _InvoiceBrowserState extends State<InvoiceBrowser> {
               onChanged: (v) => change(() => client = v ?? ''),
             ),
             const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              initialValue: dateBasis,
+              decoration: const InputDecoration(labelText: 'Group by date'),
+              items: const [
+                DropdownMenuItem(
+                  value: 'createdAt',
+                  child: Text('Invoice date'),
+                ),
+                DropdownMenuItem(
+                  value: 'pickupDate',
+                  child: Text('Pickup date'),
+                ),
+              ],
+              onChanged: (v) => change(() => dateBasis = v ?? 'createdAt'),
+            ),
+            const SizedBox(height: 10),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
@@ -228,7 +256,9 @@ class _InvoiceBrowserState extends State<InvoiceBrowser> {
                     'All dates',
                     'Today',
                     'This week',
+                    'Last week',
                     'This month',
+                    'Last month',
                     'Custom',
                   ])
                     Padding(
@@ -244,8 +274,8 @@ class _InvoiceBrowserState extends State<InvoiceBrowser> {
             ),
             Text(
               range == null
-                  ? 'Invoice date · all dates'
-                  : 'Invoice date · ${DateFormat.yMd().format(range!.start)} – ${DateFormat.yMd().format(range!.end)}',
+                  ? '${dateBasis == 'createdAt' ? 'Invoice' : 'Pickup'} date · all dates'
+                  : '${dateBasis == 'createdAt' ? 'Invoice' : 'Pickup'} date · ${DateFormat.yMd().format(range!.start)} – ${DateFormat.yMd().format(range!.end)}',
             ),
             const SizedBox(height: 8),
             SingleChildScrollView(
@@ -274,7 +304,7 @@ class _InvoiceBrowserState extends State<InvoiceBrowser> {
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                  'Choose a customer to select invoices for one statement.',
+                  'Choose a customer, filter dates, then select invoices to print together.',
                 ),
               ),
             if (client.isNotEmpty)
@@ -305,7 +335,7 @@ class _InvoiceBrowserState extends State<InvoiceBrowser> {
                             child: CircularProgressIndicator(),
                           )
                         : const Icon(Icons.picture_as_pdf),
-                    label: const Text('Preview statement'),
+                    label: const Text('Print selected together'),
                   ),
                 ],
               ),

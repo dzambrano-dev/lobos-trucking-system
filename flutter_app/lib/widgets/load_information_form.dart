@@ -1,3 +1,4 @@
+import '../models/load_status.dart';
 import 'package:flutter/material.dart';
 import '../models/load_record.dart';
 import '../models/app_user.dart';
@@ -9,7 +10,8 @@ const loadInformationFields = [
   FieldSpec('reference', 'Reference # (optional)'),
   FieldSpec(
     'scheduledDeliveryAt',
-    'Planned delivery (YYYY-MM-DD HH:MM, local time)',
+    'Planned delivery (optional)',
+    dateTime: true,
   ),
   FieldSpec('contactName', 'Trip contact name'),
   FieldSpec('contactPhone', 'Trip contact phone'),
@@ -37,6 +39,7 @@ Future<bool?> editLoadInformation(
   title: 'Driver instructions & load details',
   fields: loadInformationFields,
   initial: {
+    'scheduledPickupAt': load.scheduledPickupAt,
     'pickupNumber': load.pickupNumber,
     'reference': load.reference,
     'driverNotes': load.driverNotes,
@@ -54,5 +57,39 @@ Future<bool?> editLoadInformation(
     loadId: load.id,
     actor: actor,
     information: loadInformationData(data),
+  ),
+);
+
+Future<bool?> correctLoadStatus(
+  BuildContext context,
+  LoadRecord load,
+  LoadRepository repository,
+  AppUser actor,
+) => editRecord(
+  context,
+  title: 'Correct load status',
+  fields: [
+    FieldSpec(
+      'status',
+      'New status',
+      required: true,
+      options: {
+        for (final status in LoadProgressStatus.values)
+          if (status != load.status) status.value: status.label,
+      },
+    ),
+    const FieldSpec(
+      'reason',
+      'Reason (saved in history)',
+      required: true,
+      multiline: true,
+    ),
+  ],
+  initial: const {},
+  onSave: (data) => repository.correctStatus(
+    load: load,
+    next: LoadProgressStatus.fromValue(data['status']),
+    actor: actor,
+    reason: data['reason'].toString(),
   ),
 );

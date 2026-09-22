@@ -10,6 +10,14 @@ class LoadInformation extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
+      if (load.isComplete && load.officeDeliveryReason != null)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(
+            'Office-confirmed delivery: ${load.officeDeliveryReason}',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
       ContactLink(kind: 'address', text: load.pickupAddress, label: 'Pickup'),
       ContactLink(
         kind: 'address',

@@ -607,3 +607,31 @@ test('trip information is audited, bounded, and readable only by assigned driver
   await assertFails(edit(manager,managerId,{driverNotes:'x'.repeat(1001)},'long'));
   await assertFails(edit(manager,managerId,{scheduledDeliveryAt:new Date('2026-07-01')},'early'));
 });
+
+test('admin corrections need a reason and preserve signatures and billing', async () => {
+  await seedLoad('correct');
+  const manager = testEnvironment.authenticatedContext(managerId).firestore();
+  async function correct(db, actor, status, reason, extra = {}) {
+    const batch=writeBatch(db), id=`correction-${status}`;
+    batch.update(doc(db,'loads/correct'),{status,lastEventId:id,updatedAt:serverTimestamp(),...extra});
+    batch.set(doc(db,`loads/correct/events/${id}`),eventData(actor,'status_corrected',status,reason));
+    return batch.commit();
+  }
+  await assertFails(correct(manager,managerId,'accepted',''));
+  const driver=testEnvironment.authenticatedContext(driverId).firestore();
+  await assertFails(correct(driver,driverId,'accepted','Not an admin'));
+  await assertSucceeds(correct(manager,managerId,'accepted','Driver called office'));
+  await assertFails(correct(manager,managerId,'delivered','Missing office confirmation'));
+  await assertSucceeds(correct(manager,managerId,'delivered','Receiver confirmed by phone', {officeDelivery:{confirmedBy:managerId,confirmedAt:serverTimestamp(),reason:'Receiver confirmed by phone'}}));
+  await assertSucceeds(correct(manager,managerId,'assigned','Selected wrong load; reopening'));
+  await assertFails(updateDoc(doc(manager,'loads/correct'),{'officeDelivery.reason':'rewrite'}));
+});
+
+test('admin can edit delivered trip details with an audit entry', async () => {
+  await seedLoad('closed-info','delivered');
+  const db=testEnvironment.authenticatedContext(managerId).firestore();
+  const batch=writeBatch(db);
+  batch.update(doc(db,'loads/closed-info'),{driverNotes:'Corrected receiving dock',updatedAt:serverTimestamp(),lastEventId:'edit'});
+  batch.set(doc(db,'loads/closed-info/events/edit'),eventData(managerId,'load_updated','delivered','Details corrected'));
+  await assertSucceeds(batch.commit());
+});

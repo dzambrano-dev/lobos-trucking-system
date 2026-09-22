@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/operations.dart';
+import 'date_time_field.dart';
 
 class FieldSpec {
   const FieldSpec(
@@ -8,11 +9,12 @@ class FieldSpec {
     this.required = false,
     this.numeric = false,
     this.date = false,
+    this.dateTime = false,
     this.multiline = false,
     this.options,
   });
   final String key, label;
-  final bool required, numeric, date, multiline;
+  final bool required, numeric, date, dateTime, multiline;
   final Map<String, String>? options;
 }
 
@@ -121,7 +123,14 @@ class _RecordEditorState extends State<RecordEditor> {
                 for (final f in widget.fields)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 16),
-                    child: f.options != null
+                    child: f.dateTime
+                        ? DateTimeField(
+                            controller: controllers[f.key]!,
+                            label: f.label,
+                            seed: dateOf(widget.initial['scheduledPickupAt']),
+                            enabled: !saving,
+                          )
+                        : f.options != null
                         ? DropdownButtonFormField<String>(
                             initialValue:
                                 f.options!.containsKey(controllers[f.key]!.text)

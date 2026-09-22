@@ -127,6 +127,7 @@ service cloud.firestore {
           'status',
           'needsAttention',
           'issueSummary',
+          'officeDelivery',
           'delivery',
           'createdBy',
           'lastEventId',
@@ -332,7 +333,10 @@ service cloud.firestore {
       return isAssignedDriver(before)
         && before.status != 'delivered'
         && before.status != 'cancelled'
-        && hasRequiredLoadFields(after)
+        // Driver changes are whitelisted below; immutable trip fields already
+        // passed validation when created or edited by the office.
+        && after.needsAttention is bool
+        && after.lastEventId is string && after.lastEventId.size() > 0
         && changed.hasOnly([
           'status',
           'needsAttention',
@@ -356,6 +360,28 @@ service cloud.firestore {
           && after.needsAttention == false
           && !after.keys().hasAny(['issueSummary'])
         );
+    }
+
+    function isLoadAdmin() {
+      let permissions = currentUser().permissions;
+      return hasActiveProfile() && permissions.manageUsers == true && permissions.manageLoads == true && permissions.manageClients == true;
+    }
+
+    function validAdminStatusCorrection(loadId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let event = getAfter(eventPath(loadId, after.lastEventId)).data;
+      return after.status != before.status && event.type == 'status_corrected'
+        && isLoadAdmin()
+        && after.diff(before).affectedKeys().hasOnly(['status', 'lastEventId', 'updatedAt', 'officeDelivery'])
+        && after.status != before.status
+        && after.status in ['assigned','accepted','arrived_at_pickup','in_transit','delivered','cancelled']
+        && ((after.status == 'delivered' && after.officeDelivery.keys().hasOnly(['confirmedBy','confirmedAt','reason']) && after.officeDelivery.confirmedBy == request.auth.uid && after.officeDelivery.confirmedAt == request.time && after.officeDelivery.reason is string && after.officeDelivery.reason.size() > 0 && after.officeDelivery.reason.size() <= 800) || (after.status != 'delivered' && !after.diff(before).affectedKeys().hasAny(['officeDelivery'])))
+        && after.updatedAt == request.time
+        && after.lastEventId != before.lastEventId
+        && validEventData(event, after.status)
+        && event.type == 'status_corrected'
+        && event.note is string && event.note.size() > 0 && event.note.size() <= 1000;
     }
 
     function validManagerStatusMutation(before, after) {
@@ -419,7 +445,9 @@ service cloud.firestore {
           )
           || (
             before.status in ['delivered', 'cancelled']
+            && (isLoadAdmin() || !changed.hasAny(['pickupNumber','reference','driverNotes','scheduledDeliveryAt','contact']))
             && changed.hasOnly([
+              'pickupNumber', 'reference', 'driverNotes', 'scheduledDeliveryAt', 'contact',
               'needsAttention',
               'issueSummary',
               'lastEventId',
@@ -495,6 +523,7 @@ service cloud.firestore {
         && request.resource.data.status == 'assigned'
         && request.resource.data.needsAttention == false
         && !request.resource.data.keys().hasAny([
+          'officeDelivery',
           'issueSummary',
           'delivery'
         ])
@@ -502,8 +531,9 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
         && validCreateAuditLink(loadId, request.resource.data);
-      allow update: if validManagerUpdate(loadId)
-        || validAssignedDriverUpdate(loadId);
+      allow update: if getAfter(eventPath(loadId, request.resource.data.lastEventId)).data.type == 'status_corrected'
+        ? validAdminStatusCorrection(loadId)
+        : (validManagerUpdate(loadId) || validAssignedDriverUpdate(loadId));
       allow delete: if false;
 
       match /events/{eventId} {
@@ -531,7 +561,7 @@ service cloud.firestore {
           return (
               after.status != before.status
               && !issueChanged
-              && request.resource.data.type == after.status
+              && (request.resource.data.type == after.status || (request.resource.data.type == 'status_corrected' && isLoadAdmin() && request.resource.data.note is string && request.resource.data.note.size() > 0))
             )
             || (
               after.status == before.status
@@ -631,7 +661,8 @@ service cloud.firestore {
 
 
     function staff() {
-      return hasPermission('manageUsers') && hasPermission('manageLoads') && hasPermission('manageClients');
+      let permissions = currentUser().permissions;
+      return hasActiveProfile() && permissions.manageUsers == true && permissions.manageLoads == true && permissions.manageClients == true;
     }
     function positive(value) {
       return value is number && value > 0 && value <= 999999999 &&

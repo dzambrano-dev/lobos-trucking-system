@@ -181,8 +181,10 @@ class LoadRepository {
       final snapshot = await tx.get(ref);
       if (!snapshot.exists) throw StateError('Load no longer exists.');
       final load = LoadRecord.fromFirestore(snapshot.id, snapshot.data()!);
-      if (load.isClosed) {
-        throw StateError('Completed or cancelled loads cannot be edited.');
+      if (load.isClosed && !actor.isAdmin) {
+        throw StateError(
+          'Only an admin can edit completed or cancelled loads.',
+        );
       }
       tx.update(ref, {
         ...validatedInformation(
@@ -199,6 +201,56 @@ class LoadRepository {
           type: 'load_updated',
           status: load.status,
           note: 'Office updated driver instructions / load details',
+        ),
+      );
+    });
+  }
+
+  Future<void> correctStatus({
+    required LoadRecord load,
+    required LoadProgressStatus next,
+    required AppUser actor,
+    required String reason,
+  }) async {
+    if (!actor.isAdmin) {
+      throw StateError('Only an admin can correct load status.');
+    }
+    final note = reason.trim();
+    if (note.isEmpty || note.length > 800) {
+      throw StateError('Enter a reason, up to 800 characters.');
+    }
+    final ref = _loads.doc(load.id),
+        event = _loads.doc(load.id).collection('events').doc();
+    await _firestore.runTransaction((tx) async {
+      final snapshot = await tx.get(ref);
+      if (!snapshot.exists) throw StateError('Load no longer exists.');
+      final current = LoadRecord.fromFirestore(snapshot.id, snapshot.data()!);
+      if (current.status != load.status) {
+        throw StateError(
+          'Status changed. Close this form and review the latest load.',
+        );
+      }
+      if (next == current.status) {
+        throw StateError('Choose a different status.');
+      }
+      tx.update(ref, {
+        if (next == LoadProgressStatus.delivered)
+          'officeDelivery': {
+            'confirmedBy': actor.uid,
+            'confirmedAt': FieldValue.serverTimestamp(),
+            'reason': note,
+          },
+        'status': next.value,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'lastEventId': event.id,
+      });
+      tx.set(
+        event,
+        _eventData(
+          actor: actor,
+          type: 'status_corrected',
+          status: next,
+          note: '${current.status.label} → ${next.label}: $note',
         ),
       );
     });

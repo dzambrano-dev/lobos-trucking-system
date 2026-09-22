@@ -1,3 +1,4 @@
+import '../../widgets/date_time_field.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -33,6 +34,61 @@ class LoadManagementPage extends StatefulWidget {
 }
 
 class _LoadManagementPageState extends State<LoadManagementPage> {
+  Future<void> _history(LoadRecord load) async {
+    final history = store.db
+        .collection('loads')
+        .doc(load.id)
+        .collection('events')
+        .orderBy('createdAt', descending: true)
+        .limit(50)
+        .get();
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Load history (latest 50)'),
+        content: SizedBox(
+          width: 560,
+          height: 420,
+          child: FutureBuilder(
+            future: history,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return const Text(
+                  'Unable to load history. Close and try again.',
+                );
+              }
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final events = snapshot.data!.docs;
+              if (events.isEmpty) return const Text('No history recorded.');
+              return ListView(
+                children: [
+                  for (final event in events)
+                    ListTile(
+                      title: Text(
+                        (event.data()['note'] ?? event.data()['type'])
+                            .toString(),
+                      ),
+                      subtitle: Text(
+                        '${event.data()['actorName']} • ${shortDate(event.data()['createdAt'])}',
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   late final store = widget.store ?? Operations();
   late final _loads = LoadRepository(firestore: store.db);
   late final loadStream = _loads.watchAllLoads();
@@ -380,10 +436,19 @@ class _LoadManagementPageState extends State<LoadManagementPage> {
                               ),
                             _ManagerLoadCard(
                               load: load,
+                              onHistory: () => _history(load),
                               onEditInformation:
                                   widget.user.permissions.manageLoads &&
-                                      !load.isClosed
+                                      (!load.isClosed || widget.user.isAdmin)
                                   ? () => editLoadInformation(
+                                      context,
+                                      load,
+                                      _loads,
+                                      widget.user,
+                                    )
+                                  : null,
+                              onCorrectStatus: widget.user.isAdmin
+                                  ? () => correctLoadStatus(
                                       context,
                                       load,
                                       _loads,
@@ -438,17 +503,21 @@ class _ManagerLoadCard extends StatelessWidget {
     required this.onBill,
     required this.invoiceExists,
     this.onEditInformation,
+    this.onCorrectStatus,
+    required this.onHistory,
     required this.onReschedule,
     required this.onCancel,
   });
 
   final LoadRecord load;
+  final VoidCallback onHistory;
   final bool canManage;
   final VoidCallback onResolveIssue;
   final VoidCallback? onViewProof;
   final VoidCallback? onBill;
   final bool invoiceExists;
   final VoidCallback? onEditInformation;
+  final VoidCallback? onCorrectStatus;
   final VoidCallback? onReschedule;
   final VoidCallback? onCancel;
 
@@ -528,8 +597,19 @@ class _ManagerLoadCard extends StatelessWidget {
               TextButton.icon(
                 onPressed: onEditInformation,
                 icon: const Icon(Icons.edit_note),
-                label: const Text('Edit driver instructions'),
+                label: const Text('Edit load details'),
               ),
+            if (onCorrectStatus != null)
+              TextButton.icon(
+                onPressed: onCorrectStatus,
+                icon: const Icon(Icons.swap_vert),
+                label: const Text('Correct status'),
+              ),
+            TextButton.icon(
+              onPressed: onHistory,
+              icon: const Icon(Icons.history),
+              label: const Text('Load history'),
+            ),
             if (load.needsAttention) ...[
               const SizedBox(height: 12),
               Container(
@@ -799,12 +879,19 @@ class _CreateLoadDialogState extends State<_CreateLoadDialog> {
                 for (final field in loadInformationFields)
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
-                    child: TextFormField(
-                      controller: information[field.key],
-                      decoration: InputDecoration(labelText: field.label),
-                      minLines: field.multiline ? 3 : 1,
-                      maxLines: field.multiline ? 5 : 1,
-                    ),
+                    child: field.dateTime
+                        ? DateTimeField(
+                            controller: information[field.key]!,
+                            label: field.label,
+                            seed: _scheduledPickupAt,
+                            enabled: !_saving,
+                          )
+                        : TextFormField(
+                            controller: information[field.key],
+                            decoration: InputDecoration(labelText: field.label),
+                            minLines: field.multiline ? 3 : 1,
+                            maxLines: field.multiline ? 5 : 1,
+                          ),
                   ),
                 if (_saveError != null) ...[
                   const SizedBox(height: 12),
