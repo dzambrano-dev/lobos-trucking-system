@@ -1,0 +1,818 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function currentUser() {
+      return get(userPath()).data;
+    }
+
+    function hasActiveProfile() {
+      return signedIn()
+        && exists(userPath())
+        && currentUser().active == true;
+    }
+
+    function hasPermission(permission) {
+      return hasActiveProfile()
+        && currentUser().permissions.get(permission, false) == true;
+    }
+
+    function validPermissions(permissions) {
+      return permissions is map
+        && permissions.keys().hasAll([
+          'manageUsers',
+          'manageClients',
+          'manageLoads',
+          'viewAllLoads',
+          'updateAssignedLoads'
+        ])
+        && permissions.keys().hasOnly([
+          'manageUsers',
+          'manageClients',
+          'manageLoads',
+          'viewAllLoads',
+          'updateAssignedLoads'
+        ])
+        && permissions.manageUsers is bool
+        && permissions.manageClients is bool
+        && permissions.manageLoads is bool
+        && permissions.viewAllLoads is bool
+        && permissions.updateAssignedLoads is bool;
+    }
+
+    function validUserProfile(data) {
+      return data.keys().hasAll([
+          'displayName',
+          'email',
+          'active',
+          'permissions'
+        ])
+        && data.keys().hasOnly([
+          'displayName',
+          'email',
+          'active',
+          'permissions'
+        ])
+        && data.displayName is string
+        && data.displayName.size() > 0
+        && data.displayName.size() <= 120
+        && data.email is string
+        && data.email.size() > 3
+        && data.email.size() <= 254
+        && data.active is bool
+        && validPermissions(data.permissions);
+    }
+
+    function driverPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function isActiveDriver(uid) {
+      return exists(driverPath(uid))
+        && get(driverPath(uid)).data.active == true
+        && get(driverPath(uid)).data.permissions.updateAssignedLoads == true;
+    }
+
+    function validDriverAssignment(loadData) {
+      return isActiveDriver(loadData.assignedDriverId)
+        && loadData.assignedDriverName
+          == get(driverPath(loadData.assignedDriverId)).data.displayName;
+    }
+
+    function isAssignedDriver(loadData) {
+      return hasActiveProfile()
+        && loadData.assignedDriverId == request.auth.uid
+        && currentUser().permissions.updateAssignedLoads == true;
+    }
+
+    function canReadLoad(loadData) {
+      return hasPermission('viewAllLoads')
+        || hasPermission('manageLoads')
+        || isAssignedDriver(loadData);
+    }
+
+    function hasRequiredLoadFields(loadData) {
+      return loadData.keys().hasAll([
+          'loadNumber',
+          'clientId',
+          'clientName',
+          'pickupAddress',
+          'deliveryAddress',
+          'scheduledPickupAt',
+          'assignedDriverId',
+          'assignedDriverName',
+          'status',
+          'needsAttention',
+          'createdBy',
+          'lastEventId',
+          'createdAt',
+          'updatedAt'
+        ])
+        && loadData.keys().hasOnly([
+          'loadNumber',
+          'clientId',
+          'clientName',
+          'pickupAddress',
+          'deliveryAddress',
+          'scheduledPickupAt',
+          'assignedDriverId',
+          'assignedDriverName',
+          'status',
+          'needsAttention',
+          'issueSummary',
+          'officeDelivery',
+          'delivery',
+          'createdBy',
+          'lastEventId',
+          'createdAt',
+          'updatedAt',
+          'pickupNumber', 'reference', 'driverNotes', 'scheduledDeliveryAt', 'contact',
+        ])
+        && loadData.loadNumber is string
+        && loadData.loadNumber.size() > 0
+        && loadData.loadNumber.size() <= 40
+        && loadData.clientId is string
+        && loadData.clientId.size() > 0
+        && loadData.clientName is string
+        && loadData.clientName.size() > 0
+        && loadData.clientName.size() <= 150
+        && loadData.pickupAddress is string
+        && loadData.pickupAddress.size() > 0
+        && loadData.pickupAddress.size() <= 300
+        && loadData.deliveryAddress is string
+        && loadData.deliveryAddress.size() > 0
+        && loadData.deliveryAddress.size() <= 300
+        && loadData.scheduledPickupAt is timestamp
+        && loadData.assignedDriverId is string
+        && loadData.assignedDriverName is string
+        && loadData.assignedDriverName.size() > 0
+        && loadData.assignedDriverName.size() <= 120
+        && loadData.status in [
+          'assigned',
+          'accepted',
+          'arrived_at_pickup',
+          'in_transit',
+          'delivered',
+          'cancelled'
+        ]
+        && loadData.needsAttention is bool
+        && loadData.get('issueSummary', '') is string
+        && loadData.get('issueSummary', '').size() <= 1000
+        && loadData.get('delivery', {}) is map
+        && loadData.createdBy is string
+        && loadData.createdBy.size() > 0
+        && loadData.lastEventId is string
+        && loadData.lastEventId.size() > 0
+        && loadData.createdAt is timestamp
+        && loadData.updatedAt is timestamp
+        && loadData.get('pickupNumber','') is string && loadData.get('pickupNumber','').size() <= 80
+        && loadData.get('reference','') is string && loadData.get('reference','').size() <= 80
+        && loadData.get('driverNotes','') is string && loadData.get('driverNotes','').size() <= 1000
+        && (loadData.get('scheduledDeliveryAt',null) == null || (loadData.scheduledDeliveryAt is timestamp && loadData.scheduledDeliveryAt >= loadData.scheduledPickupAt))
+        && loadData.get('contact',{}) is map
+        && loadData.get('contact',{}).keys().hasOnly(['name','phone','email'])
+        && loadData.get('contact',{}).get('name','') is string && loadData.get('contact',{}).get('name','').size() <= 120
+        && loadData.get('contact',{}).get('phone','') is string && loadData.get('contact',{}).get('phone','').size() <= 40
+        && loadData.get('contact',{}).get('email','') is string && loadData.get('contact',{}).get('email','').size() <= 254;
+    }
+
+    function eventPath(loadId, eventId) {
+      return /databases/$(database)/documents/loads/$(loadId)/events/$(eventId);
+    }
+
+    function proofPath(loadId) {
+      return /databases/$(database)/documents/loads/$(loadId)/proofs/customerSignature;
+    }
+
+    function validEventData(event, expectedStatus) {
+      return event.keys().hasAll([
+          'type',
+          'status',
+          'actorUid',
+          'actorName',
+          'note',
+          'createdAt'
+        ])
+        && event.keys().hasOnly([
+          'type',
+          'status',
+          'actorUid',
+          'actorName',
+          'note',
+          'createdAt'
+        ])
+        && event.type is string
+        && event.status == expectedStatus
+        && event.actorUid == request.auth.uid
+        && event.actorName == currentUser().displayName
+        && (
+          event.note == null
+          || (
+            event.note is string
+            && event.note.size() <= 1000
+          )
+        )
+        && event.createdAt == request.time;
+    }
+
+    function validCreateAuditLink(loadId, after) {
+      let event = getAfter(eventPath(loadId, after.lastEventId)).data;
+      return validEventData(event, after.status)
+        && event.type == 'assigned';
+    }
+
+    function validUpdateAuditLink(loadId, before, after) {
+      let event = getAfter(eventPath(loadId, after.lastEventId)).data;
+      let changed = after.diff(before).affectedKeys();
+      let issueChanged = changed.hasAny(['needsAttention', 'issueSummary']);
+
+      return after.lastEventId != before.lastEventId
+        && validEventData(event, after.status)
+        && (
+          (
+            after.status != before.status
+            && !issueChanged
+            && event.type == after.status
+          )
+          || (
+            after.status == before.status
+            && issueChanged
+            && after.needsAttention == true
+            && event.type == 'issue_reported'
+            && event.note == after.issueSummary
+          )
+          || (
+            after.status == before.status
+            && issueChanged
+            && after.needsAttention == false
+            && event.type == 'issue_resolved'
+            && event.note == null
+          )
+          || (
+            after.status == before.status
+            && !issueChanged
+            && event.type == 'load_updated'
+            && hasPermission('manageLoads')
+          )
+        );
+    }
+
+    function isAllowedProgressTransition(before, after) {
+      return after == before
+        || (before == 'assigned' && after == 'accepted')
+        || (before == 'accepted' && after == 'arrived_at_pickup')
+        || (before == 'arrived_at_pickup' && after == 'in_transit')
+        || (before == 'in_transit' && after == 'delivered');
+    }
+
+    function validDriverIssueMutation(before, after) {
+      let changed = after.diff(before).affectedKeys();
+      return !changed.hasAny(['needsAttention', 'issueSummary'])
+        || (
+          after.needsAttention == true
+          && after.issueSummary is string
+          && after.issueSummary.size() > 0
+          && after.issueSummary.size() <= 1000
+        );
+    }
+
+    function validDeliveryProof(loadId, after) {
+      let proof = getAfter(proofPath(loadId)).data;
+
+      return after.delivery.keys().hasOnly([
+          'proofId',
+          'signedByName',
+          'signedAt',
+          'capturedBy'
+        ])
+        && after.delivery.proofId == 'customerSignature'
+        && after.delivery.signedByName is string
+        && after.delivery.signedByName.size() > 0
+        && after.delivery.signedByName.size() <= 120
+        && after.delivery.signedAt == request.time
+        && after.delivery.capturedBy == request.auth.uid
+        && proof.signaturePng is bytes
+        && proof.signaturePng.size() > 0
+        && proof.signaturePng.size() <= 350 * 1024
+        && proof.contentType == 'image/png'
+        && proof.byteLength == proof.signaturePng.size()
+        && proof.signedByName == after.delivery.signedByName
+        && proof.signedAt == request.time
+        && proof.capturedBy == request.auth.uid
+        && proof.createdAt == request.time;
+    }
+
+    function validDeliveryMutation(loadId, before, after) {
+      let changed = after.diff(before).affectedKeys();
+      let deliveryRequired = before.status != 'delivered'
+        && after.status == 'delivered';
+
+      return (
+          !deliveryRequired
+          && !changed.hasAny(['delivery'])
+        )
+        || (
+          before.status == 'in_transit'
+          && after.status == 'delivered'
+          && validDeliveryProof(loadId, after)
+        );
+    }
+
+    function validAssignedDriverUpdate(loadId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let changed = after.diff(before).affectedKeys();
+
+      return isAssignedDriver(before)
+        && before.status != 'delivered'
+        && before.status != 'cancelled'
+        // Driver changes are whitelisted below; immutable trip fields already
+        // passed validation when created or edited by the office.
+        && after.needsAttention is bool
+        && after.lastEventId is string && after.lastEventId.size() > 0
+        && changed.hasOnly([
+          'status',
+          'needsAttention',
+          'issueSummary',
+          'delivery',
+          'lastEventId',
+          'updatedAt'
+        ])
+        && after.updatedAt == request.time
+        && isAllowedProgressTransition(before.status, after.status)
+        && validDriverIssueMutation(before, after)
+        && validDeliveryMutation(loadId, before, after)
+        && validUpdateAuditLink(loadId, before, after);
+    }
+
+    function validManagerIssueMutation(before, after) {
+      let changed = after.diff(before).affectedKeys();
+      return !changed.hasAny(['needsAttention', 'issueSummary'])
+        || (
+          before.needsAttention == true
+          && after.needsAttention == false
+          && !after.keys().hasAny(['issueSummary'])
+        );
+    }
+
+    function isLoadAdmin() {
+      let permissions = currentUser().permissions;
+      return hasActiveProfile() && permissions.manageUsers == true && permissions.manageLoads == true && permissions.manageClients == true;
+    }
+
+    function validAdminStatusCorrection(loadId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let event = getAfter(eventPath(loadId, after.lastEventId)).data;
+      return after.status != before.status && event.type == 'status_corrected'
+        && isLoadAdmin()
+        && after.diff(before).affectedKeys().hasOnly(['status', 'lastEventId', 'updatedAt', 'officeDelivery'])
+        && after.status != before.status
+        && after.status in ['assigned','accepted','arrived_at_pickup','in_transit','delivered','cancelled']
+        && ((after.status == 'delivered' && after.officeDelivery.keys().hasOnly(['confirmedBy','confirmedAt','reason']) && after.officeDelivery.confirmedBy == request.auth.uid && after.officeDelivery.confirmedAt == request.time && after.officeDelivery.reason is string && after.officeDelivery.reason.size() > 0 && after.officeDelivery.reason.size() <= 800) || (after.status != 'delivered' && !after.diff(before).affectedKeys().hasAny(['officeDelivery'])))
+        && after.updatedAt == request.time
+        && after.lastEventId != before.lastEventId
+        && validEventData(event, after.status)
+        && event.type == 'status_corrected'
+        && event.note is string && event.note.size() > 0 && event.note.size() <= 1000;
+    }
+
+    function validManagerStatusMutation(before, after) {
+      return (
+          before in ['delivered', 'cancelled']
+          && after == before
+        )
+        || (
+          !(before in ['delivered', 'cancelled'])
+          && (after == before || after == 'cancelled')
+        );
+    }
+
+    function validManagerUpdate(loadId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let changed = after.diff(before).affectedKeys();
+
+      return hasPermission('manageLoads')
+        && hasRequiredLoadFields(after)
+        && after.loadNumber == before.loadNumber
+        && after.createdBy == before.createdBy
+        && after.createdAt == before.createdAt
+        && after.updatedAt == request.time
+        && !changed.hasAny(['delivery'])
+        && validManagerStatusMutation(before.status, after.status)
+        && validManagerIssueMutation(before, after)
+        && (
+          (
+            before.status == 'assigned'
+            && changed.hasOnly([
+              'pickupNumber', 'reference', 'driverNotes', 'scheduledDeliveryAt', 'contact',
+              'clientId',
+              'clientName',
+              'pickupAddress',
+              'deliveryAddress',
+              'scheduledPickupAt',
+              'assignedDriverId',
+              'assignedDriverName',
+              'status',
+              'needsAttention',
+              'issueSummary',
+              'lastEventId',
+              'updatedAt'
+            ])
+          )
+          || (
+            before.status in [
+              'accepted',
+              'arrived_at_pickup',
+              'in_transit'
+            ]
+            && changed.hasOnly([
+              'pickupNumber', 'reference', 'driverNotes', 'scheduledDeliveryAt', 'contact',
+              'status',
+              'needsAttention',
+              'issueSummary',
+              'lastEventId',
+              'updatedAt'
+            ])
+          )
+          || (
+            before.status in ['delivered', 'cancelled']
+            && (isLoadAdmin() || !changed.hasAny(['pickupNumber','reference','driverNotes','scheduledDeliveryAt','contact']))
+            && changed.hasOnly([
+              'pickupNumber', 'reference', 'driverNotes', 'scheduledDeliveryAt', 'contact',
+              'needsAttention',
+              'issueSummary',
+              'lastEventId',
+              'updatedAt'
+            ])
+          )
+        )
+        && (
+          !changed.hasAny(['assignedDriverId', 'assignedDriverName'])
+          || validDriverAssignment(after)
+        )
+        && validUpdateAuditLink(loadId, before, after);
+    }
+
+    function validClient(data) {
+      return data.keys().hasAll([
+          'name',
+          'contact',
+          'phone',
+          'email',
+          'address',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'name',
+          'contact',
+          'phone',
+          'email',
+          'address',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 150
+        && data.contact is string
+        && data.contact.size() > 0
+        && data.contact.size() <= 120
+        && data.phone is string
+        && data.phone.size() > 0
+        && data.phone.size() <= 40
+        && data.email is string
+        && data.email.size() <= 254
+        && data.address is string
+        && data.address.size() > 0
+        && data.address.size() <= 300
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /users/{uid} {
+      // A signed-in person may read their own profile even when it is inactive.
+      // Otherwise the app could not explain that an account was disabled.
+      allow get: if (
+          signedIn()
+          && uid == request.auth.uid
+        )
+        || hasPermission('manageUsers')
+        || hasPermission('manageLoads');
+      allow list: if hasPermission('manageUsers')
+        || hasPermission('manageLoads');
+      allow create, update: if hasPermission('manageUsers')
+        && validUserProfile(request.resource.data);
+      allow delete: if false;
+    }
+
+    match /loads/{loadId} {
+      allow read: if canReadLoad(resource.data);
+      allow create: if hasPermission('manageLoads')
+        && hasRequiredLoadFields(request.resource.data)
+        && validDriverAssignment(request.resource.data)
+        && request.resource.data.status == 'assigned'
+        && request.resource.data.needsAttention == false
+        && !request.resource.data.keys().hasAny([
+          'officeDelivery',
+          'issueSummary',
+          'delivery'
+        ])
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && validCreateAuditLink(loadId, request.resource.data);
+      allow update: if getAfter(eventPath(loadId, request.resource.data.lastEventId)).data.type == 'status_corrected'
+        ? validAdminStatusCorrection(loadId)
+        : (validManagerUpdate(loadId) || validAssignedDriverUpdate(loadId));
+      allow delete: if false;
+
+      match /events/{eventId} {
+        function parentPath() {
+          return /databases/$(database)/documents/loads/$(loadId);
+        }
+
+        function parentBefore() {
+          return get(parentPath()).data;
+        }
+
+        function parentAfter() {
+          return getAfter(parentPath()).data;
+        }
+
+        function validExistingAuditEvent() {
+          let before = parentBefore();
+          let after = parentAfter();
+          let changed = after.diff(before).affectedKeys();
+          let issueChanged = changed.hasAny([
+            'needsAttention',
+            'issueSummary'
+          ]);
+
+          return (
+              after.status != before.status
+              && !issueChanged
+              && (request.resource.data.type == after.status || (request.resource.data.type == 'status_corrected' && isLoadAdmin() && request.resource.data.note is string && request.resource.data.note.size() > 0))
+            )
+            || (
+              after.status == before.status
+              && issueChanged
+              && after.needsAttention == true
+              && request.resource.data.type == 'issue_reported'
+              && request.resource.data.note == after.issueSummary
+            )
+            || (
+              after.status == before.status
+              && issueChanged
+              && after.needsAttention == false
+              && request.resource.data.type == 'issue_resolved'
+              && request.resource.data.note == null
+            )
+            || (
+              after.status == before.status
+              && !issueChanged
+              && request.resource.data.type == 'load_updated'
+              && hasPermission('manageLoads')
+            );
+        }
+
+        function validAuditEvent() {
+          return (
+              !exists(parentPath())
+              && request.resource.data.type == 'assigned'
+              && hasPermission('manageLoads')
+              && parentAfter().status == 'assigned'
+            )
+            || (
+              exists(parentPath())
+              && validExistingAuditEvent()
+            );
+        }
+
+        allow read: if canReadLoad(parentBefore());
+        allow create: if eventId == parentAfter().lastEventId
+          && canReadLoad(parentAfter())
+          && parentAfter().updatedAt == request.time
+          && validEventData(request.resource.data, parentAfter().status)
+          && validAuditEvent();
+        allow update, delete: if false;
+      }
+
+      match /proofs/{proofId} {
+        function parentPath() {
+          return /databases/$(database)/documents/loads/$(loadId);
+        }
+
+        function validProof(data) {
+          return data.keys().hasAll([
+              'signaturePng',
+              'contentType',
+              'byteLength',
+              'signedByName',
+              'signedAt',
+              'capturedBy',
+              'createdAt'
+            ])
+            && data.keys().hasOnly([
+              'signaturePng',
+              'contentType',
+              'byteLength',
+              'signedByName',
+              'signedAt',
+              'capturedBy',
+              'createdAt'
+            ])
+            && data.signaturePng is bytes
+            && data.signaturePng.size() > 0
+            && data.signaturePng.size() <= 350 * 1024
+            && data.contentType == 'image/png'
+            && data.byteLength is int
+            && data.byteLength == data.signaturePng.size()
+            && data.signedByName is string
+            && data.signedByName.size() > 0
+            && data.signedByName.size() <= 120
+            && data.signedAt == request.time
+            && data.capturedBy == request.auth.uid
+            && data.createdAt == request.time;
+        }
+
+        allow read: if proofId == 'customerSignature'
+          && canReadLoad(get(parentPath()).data);
+        allow create: if proofId == 'customerSignature'
+          && isAssignedDriver(get(parentPath()).data)
+          && get(parentPath()).data.status == 'in_transit'
+          && getAfter(parentPath()).data.status == 'delivered'
+          && getAfter(parentPath()).data.delivery.proofId == proofId
+          && validProof(request.resource.data);
+
+        // A delivery signature is evidence, not an editable attachment.
+        allow update, delete: if false;
+      }
+    }
+
+
+    function staff() {
+      let permissions = currentUser().permissions;
+      return hasActiveProfile() && permissions.manageUsers == true && permissions.manageLoads == true && permissions.manageClients == true;
+    }
+    function positive(value) {
+      return value is number && value > 0 && value <= 999999999 &&
+        math.abs(value * 100 - math.round(value * 100)) < 0.00001;
+    }
+    function paid(data) {
+      return data.get('amountPaid', data.get('status', 'pending') == 'paid' ? data.amount : 0);
+    }
+    function near(a, b) { return a - b < 0.000001 && b - a < 0.000001; }
+    match /staff/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list, write: if false;
+    }
+    match /settings/company {
+      allow read: if staff();
+      allow create, update: if staff() && request.resource.data.name is string && request.resource.data.name.size() > 0 &&
+        request.resource.data.address is string && request.resource.data.address.size() > 0;
+      allow delete: if false;
+    }
+    match /clients/{id} {
+      allow read: if staff();
+      allow create, update: if staff() && request.resource.data.name is string && request.resource.data.name.size() > 0;
+      allow delete: if false;
+    }
+    match /jobs/{id} {
+      function validJob() {
+        let d = request.resource.data;
+        return (!('loadId' in d) || (d.loadId is string && id == 'load_' + d.loadId && get(/databases/$(database)/documents/loads/$(d.loadId)).data.status == 'delivered')) &&
+          d.clientId is string && d.pickup is string && d.pickup.size() > 0 &&
+          d.dropoff is string && d.dropoff.size() > 0 && positive(d.price) &&
+          d.status in ['pending', 'in progress', 'completed', 'cancelled'] &&
+          get(/databases/$(database)/documents/clients/$(d.clientId)).data.get('archived', false) == false;
+      }
+      allow read: if staff();
+      allow create: if staff() && validJob() && !('invoiceId' in request.resource.data);
+      allow update: if staff() && (
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['archived', 'updatedAt']) && request.resource.data.archived is bool) ||
+        (!('invoiceId' in resource.data) && (
+          (!('invoiceId' in request.resource.data) && validJob() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['loadId'])) ||
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['invoiceId']) &&
+            getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.jobId == id)
+        ))
+      );
+      allow delete: if false;
+    }
+    match /invoices/{id} {
+      allow read: if staff();
+      allow create: if staff() && request.resource.data.jobId == id &&
+        get(/databases/$(database)/documents/jobs/$(id)).data.status == 'completed' &&
+        get(/databases/$(database)/documents/jobs/$(id)).data.get('archived', false) == false &&
+        !('invoiceId' in get(/databases/$(database)/documents/jobs/$(id)).data) &&
+        getAfter(/databases/$(database)/documents/jobs/$(id)).data.invoiceId == id &&
+        positive(request.resource.data.amount) &&
+        near(request.resource.data.amount, get(/databases/$(database)/documents/jobs/$(id)).data.price) &&
+        request.resource.data.amountPaid == 0 && request.resource.data.status == 'pending';
+      allow update: if staff() && (
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dueDate', 'notes', 'updatedAt']) &&
+          request.resource.data.dueDate is timestamp && request.resource.data.notes is string) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amountPaid', 'status', 'lastPaymentId', 'updatedAt']) &&
+          request.resource.data.amountPaid > paid(resource.data) &&
+          request.resource.data.amountPaid <= resource.data.amount &&
+          request.resource.data.status == (near(request.resource.data.amountPaid, resource.data.amount) ? 'paid' : 'partial') &&
+          !exists(/databases/$(database)/documents/payments/$(request.resource.data.lastPaymentId)) &&
+          getAfter(/databases/$(database)/documents/payments/$(request.resource.data.lastPaymentId)).data.invoiceId == id &&
+          near(getAfter(/databases/$(database)/documents/payments/$(request.resource.data.lastPaymentId)).data.amount,
+            request.resource.data.amountPaid - paid(resource.data))) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amountPaid', 'status', 'lastReversalId', 'updatedAt']) &&
+          request.resource.data.amountPaid >= 0 && request.resource.data.amountPaid < paid(resource.data) &&
+          request.resource.data.status == (near(request.resource.data.amountPaid, 0) ? 'pending' : 'partial') &&
+          !exists(/databases/$(database)/documents/payment_reversals/$(request.resource.data.lastReversalId)) &&
+          getAfter(/databases/$(database)/documents/payment_reversals/$(request.resource.data.lastReversalId)).data.invoiceId == id &&
+          near(getAfter(/databases/$(database)/documents/payment_reversals/$(request.resource.data.lastReversalId)).data.amount,
+            paid(resource.data) - request.resource.data.amountPaid))
+      );
+      allow delete: if false;
+    }
+    match /payments/{id} {
+      allow read: if staff();
+      allow create: if staff() && positive(request.resource.data.amount) &&
+        request.resource.data.reference is string && request.resource.data.reference.size() > 0 &&
+        getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.lastPaymentId == id &&
+        near(getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.amountPaid,
+          paid(get(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data) + request.resource.data.amount);
+      allow update, delete: if false;
+    }
+    function expensePaid(d) { return d.get('amountPaid', 0); }
+    match /expenses/{id} {
+      function validBill() {
+        let d = request.resource.data;
+        return positive(d.amount) && d.category in ['Fuel','Maintenance','Tolls','Insurance','Driver pay','Other'] &&
+          d.expenseDate is timestamp && expensePaid(d) >= 0 && expensePaid(d) <= d.amount;
+      }
+      function linkedPayment(beforePaid) {
+        let d = request.resource.data;
+        let p = /databases/$(database)/documents/expense_payments/$(d.lastPaymentId);
+        return !exists(p) && getAfter(p).data.expenseId == id &&
+          near(getAfter(p).data.amount, expensePaid(d) - beforePaid);
+      }
+      allow read: if staff();
+      allow create: if staff() && validBill() && request.resource.data.paymentReviewed == true &&
+        (expensePaid(request.resource.data) == 0 || linkedPayment(0));
+      allow update: if staff() && validBill() && (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['category','vendor','amount','expenseDate','dueDate','truck','jobId','notes','updatedAt','archived']) ||
+        (!resource.data.get('paymentReviewed',false) && request.resource.data.paymentReviewed == true &&
+          expensePaid(request.resource.data) == 0 && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentReviewed','amountPaid','updatedAt'])) ||
+        (request.resource.data.paymentReviewed == true && expensePaid(request.resource.data) > expensePaid(resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amountPaid','paymentReviewed','lastPaymentId','updatedAt']) && linkedPayment(expensePaid(resource.data))) ||
+        (expensePaid(request.resource.data) < expensePaid(resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amountPaid','lastReversalId','updatedAt']) &&
+          !exists(/databases/$(database)/documents/expense_reversals/$(request.resource.data.lastReversalId)) &&
+          getAfter(/databases/$(database)/documents/expense_reversals/$(request.resource.data.lastReversalId)).data.expenseId == id &&
+          near(getAfter(/databases/$(database)/documents/expense_reversals/$(request.resource.data.lastReversalId)).data.amount,expensePaid(resource.data)-expensePaid(request.resource.data)))
+      );
+      allow delete: if false;
+    }
+    match /expense_payments/{id} {
+      function previous() {
+        let p = /databases/$(database)/documents/expenses/$(request.resource.data.expenseId);
+        return exists(p) ? expensePaid(get(p).data) : 0;
+      }
+      allow read: if staff();
+      allow create: if staff() && positive(request.resource.data.amount) && request.resource.data.paidAt is timestamp &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.reference is string && request.resource.data.reference.size() > 0 &&
+        getAfter(/databases/$(database)/documents/expenses/$(request.resource.data.expenseId)).data.lastPaymentId == id &&
+        near(expensePaid(getAfter(/databases/$(database)/documents/expenses/$(request.resource.data.expenseId)).data),previous()+request.resource.data.amount);
+      allow update, delete: if false;
+    }
+    match /expense_reversals/{id} {
+      allow read: if staff();
+      allow create: if staff() && request.resource.data.paymentId == id && request.resource.data.reason is string &&
+        request.resource.data.reason.size() > 0 && request.resource.data.createdAt == request.time &&
+        get(/databases/$(database)/documents/expense_payments/$(id)).data.expenseId == request.resource.data.expenseId &&
+        get(/databases/$(database)/documents/expense_payments/$(id)).data.amount == request.resource.data.amount &&
+        getAfter(/databases/$(database)/documents/expenses/$(request.resource.data.expenseId)).data.lastReversalId == id &&
+        near(expensePaid(get(/databases/$(database)/documents/expenses/$(request.resource.data.expenseId)).data)-request.resource.data.amount,
+          expensePaid(getAfter(/databases/$(database)/documents/expenses/$(request.resource.data.expenseId)).data));
+      allow update, delete: if false;
+    }
+    match /payment_reversals/{id} {
+      allow read: if staff();
+      allow create: if staff() && request.resource.data.paymentId == id &&
+        request.resource.data.reason is string && request.resource.data.reason.size() > 0 &&
+        get(/databases/$(database)/documents/payments/$(id)).data.invoiceId == request.resource.data.invoiceId &&
+        request.resource.data.amount == get(/databases/$(database)/documents/payments/$(id)).data.amount &&
+        getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.lastReversalId == id &&
+        near(paid(get(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data) - request.resource.data.amount,
+          getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.amountPaid);
+      allow update, delete: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
