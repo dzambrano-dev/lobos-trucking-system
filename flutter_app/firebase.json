@@ -89,6 +89,9 @@
           }
         ]
       }
+    ],
+    "predeploy": [
+      "node tool/verify_web_build.cjs"
     ]
   }
 }

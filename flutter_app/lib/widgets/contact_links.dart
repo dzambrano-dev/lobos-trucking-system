@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 Uri contactUri(String kind, String text) => switch (kind) {
-  'phone' => Uri(
-    scheme: 'tel',
+  'phone' || 'sms' => Uri(
+    scheme: kind == 'sms' ? 'sms' : 'tel',
     path: text
         .split(RegExp(r'(?:ext\.?|x|;ext=|#)', caseSensitive: false))
         .first
@@ -16,6 +17,39 @@ Uri contactUri(String kind, String text) => switch (kind) {
     'query': text.trim(),
   }),
 };
+
+Future<void> openContactLink(
+  BuildContext context,
+  String kind,
+  String text,
+) async {
+  try {
+    if (await launchUrl(
+      contactUri(kind, text),
+      mode: kIsWeb
+          ? LaunchMode.platformDefault
+          : LaunchMode.externalApplication,
+      webOnlyWindowName: kind == 'phone' || kind == 'sms' || kind == 'email'
+          ? '_self'
+          : '_blank',
+    )) {
+      return;
+    }
+  } catch (error) {
+    debugPrint('Contact link failed ($kind): $error');
+  }
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          kind == 'phone' || kind == 'sms'
+              ? 'Your browser could not open a phone or messaging app. Try this link on your phone, or copy the number.'
+              : 'The link could not open. Check your browser settings or copy the address.',
+        ),
+      ),
+    );
+  }
+}
 
 class ContactLink extends StatelessWidget {
   const ContactLink({
@@ -46,27 +80,15 @@ class ContactLink extends StatelessWidget {
               size: 20,
             ),
             label: Text(label == null ? text : '$label: $text'),
-            onPressed: () async {
-              try {
-                if (await launchUrl(
-                  contactUri(kind, text),
-                  mode: LaunchMode.externalApplication,
-                )) {
-                  return;
-                }
-              } catch (_) {}
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'No application opened. Use the copy button instead.',
-                    ),
-                  ),
-                );
-              }
-            },
+            onPressed: () => openContactLink(context, kind, text),
           ),
         ),
+        if (kind == 'phone')
+          IconButton(
+            tooltip: 'Text this number',
+            icon: const Icon(Icons.sms_outlined, size: 20),
+            onPressed: () => openContactLink(context, 'sms', text),
+          ),
         IconButton(
           tooltip: 'Copy ${label ?? kind}',
           icon: const Icon(Icons.copy_outlined, size: 16),
